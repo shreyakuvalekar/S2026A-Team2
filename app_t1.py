@@ -1,3 +1,4 @@
+import html
 import io
 import re
 from typing import Dict, List, Optional, Tuple
@@ -15,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-APP_BUILD = "dataweaver-clean-v1"
+APP_BUILD = "dataweaver-erd-v13-wireframe"
 
 # Custom styles — dashboard look & feel
 def _inject_styles() -> None:
@@ -24,6 +25,7 @@ def _inject_styles() -> None:
         <style>
             /* Fonts & base */
             @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap');
             html, body, [class*="css"] { font-family: 'DM Sans', system-ui, sans-serif; }
             .block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1200px; }
 
@@ -186,6 +188,100 @@ def _inject_styles() -> None:
             .dw-tag-ok { background: #dcfce7; color: #166534; }
             .dw-tag-mid { background: #fef3c7; color: #92400e; }
             .dw-tag-risk { background: #fee2e2; color: #991b1b; }
+
+            /* Schema inference — wireframe board (Mapper) */
+            .dw-wf-board {
+                border: 2px dashed #64748b;
+                border-radius: 6px;
+                background: linear-gradient(180deg, #fafafa 0%, #f4f4f5 100%);
+                padding: 14px 16px 18px;
+                margin: 0 0 14px 0;
+            }
+            .dw-wf-board-title {
+                font-size: 0.68rem;
+                letter-spacing: 0.16em;
+                font-weight: 700;
+                color: #64748b;
+                text-transform: uppercase;
+                margin-bottom: 12px;
+            }
+            .dw-wf-metrics {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 10px;
+            }
+            .dw-wf-metric-cell {
+                border: 1px dashed #94a3b8;
+                background: #fff;
+                padding: 10px 8px;
+                text-align: center;
+                border-radius: 4px;
+            }
+            .dw-wf-num { display: block; font-size: 1.35rem; font-weight: 700; color: #0f172a; line-height: 1.2; }
+            .dw-wf-lbl { display: block; font-size: 0.62rem; letter-spacing: 0.1em; color: #64748b; margin-top: 4px; font-weight: 600; }
+            .dw-wf-lane-h {
+                font-size: 0.65rem;
+                letter-spacing: 0.14em;
+                font-weight: 800;
+                color: #475569;
+                text-transform: uppercase;
+                margin: 0 0 10px 0;
+                padding-bottom: 6px;
+                border-bottom: 1px dashed #cbd5e1;
+            }
+            .dw-wf-lane-h.e { color: #1d4ed8; }
+            .dw-wf-lane-h.t { color: #b45309; }
+            .dw-wf-lane-h.l { color: #15803d; }
+            .dw-wf-card {
+                border: 2px dashed #94a3b8;
+                background: #fff;
+                border-radius: 4px;
+                padding: 10px 12px 12px;
+                margin-bottom: 10px;
+            }
+            .dw-wf-card-title { font-weight: 700; font-size: 0.88rem; color: #0f172a; margin-bottom: 4px; }
+            .dw-wf-meta { font-size: 0.76rem; color: #64748b; margin-bottom: 8px; }
+            .dw-wf-code {
+                font-family: 'IBM Plex Mono', ui-monospace, monospace;
+                font-size: 0.72rem;
+                color: #334155;
+                line-height: 1.45;
+                margin-bottom: 8px;
+                word-break: break-word;
+            }
+            .dw-wf-keys { font-size: 0.74rem; color: #475569; margin-bottom: 8px; }
+            .dw-wf-keys code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-size: 0.72rem; }
+            .dw-wf-pill {
+                display: inline-block;
+                font-size: 0.65rem;
+                font-weight: 700;
+                letter-spacing: 0.04em;
+                padding: 3px 8px;
+                border-radius: 3px;
+                border: 1px dashed #94a3b8;
+            }
+            .dw-wf-pill-ok { background: #ecfdf5; color: #047857; border-color: #6ee7b7; }
+            .dw-wf-pill-warn { background: #fffbeb; color: #b45309; border-color: #fcd34d; }
+            .dw-wf-pill-bad { background: #fef2f2; color: #b91c1c; border-color: #fca5a5; }
+            .dw-wf-ul { margin: 6px 0 0 0; padding-left: 16px; font-size: 0.76rem; color: #334155; line-height: 1.5; }
+            .dw-wf-note {
+                font-size: 0.72rem;
+                color: #64748b;
+                border: 1px dashed #cbd5e1;
+                background: #f8fafc;
+                padding: 8px 10px;
+                border-radius: 4px;
+                margin-top: 8px;
+            }
+            /* ERD graphviz — wireframe frame (solid outer border) */
+            [data-testid="stGraphvizChart"] {
+                border: 2px solid #94a3b8 !important;
+                border-radius: 8px !important;
+                padding: 10px !important;
+                background: repeating-linear-gradient(
+                    0deg, #fafafa, #fafafa 10px, #f4f4f5 11px
+                ) !important;
+            }
         </style>
         """,
         unsafe_allow_html=True,
@@ -243,6 +339,18 @@ def _pipeline_status_sidebar() -> None:
 _inject_styles()
 
 # Helpers
+def _humanize_column_name(col: str) -> str:
+    """Replace pandas default index column labels (Unnamed: 0) in UI text."""
+    s = str(col).strip()
+    if "unnamed" in s.lower():
+        return "row_index"
+    return s
+
+
+def _humanize_key_list(cols: List[str]) -> List[str]:
+    return [_humanize_column_name(c) for c in cols]
+
+
 def profile_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Basic profiling for each column."""
     profile = []
@@ -262,6 +370,83 @@ def profile_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(profile)
 
 
+def _normalize_table_keys(
+    df: pd.DataFrame, primary: List[str], foreign: List[str]
+) -> Tuple[List[str], List[str]]:
+    """
+    One primary key per table (best-scoring). Other id-like PK candidates become FK candidates.
+    Keeps compound-PK cases only when both columns are required (rare in CSV); for MVP we prefer a single PK.
+    """
+    primary = list(dict.fromkeys(primary))
+    foreign = list(dict.fromkeys(foreign))
+    foreign = [c for c in foreign if c not in primary]
+
+    if len(primary) <= 1:
+        return primary, foreign
+
+    def _pk_rank(col: str) -> Tuple[int, int, int, str]:
+        lc = str(col).lower()
+        tier = 0 if lc == "id" else (1 if lc.endswith("_id") else 2)
+        try:
+            full = bool(df[col].notna().all() and df[col].nunique() == len(df))
+        except Exception:
+            full = False
+        uniq_tier = 0 if full else 1
+        return (tier, uniq_tier, len(str(col)), col)
+
+    ranked = sorted(primary, key=_pk_rank)
+    winner = ranked[0]
+    new_primary = [winner]
+    for c in ranked[1:]:
+        lc = str(c).lower()
+        if lc.endswith("_id") or lc == "id":
+            if c not in foreign:
+                foreign.append(c)
+    foreign = [c for c in foreign if c not in new_primary]
+    return new_primary, list(dict.fromkeys(foreign))
+
+
+def enrich_cross_table_foreign_keys(
+    dfs: Dict[str, pd.DataFrame],
+    schema_guess: Dict[str, Dict[str, List[str]]],
+) -> Dict[str, Dict[str, List[str]]]:
+    """
+    If two+ tables share a column name that is PK in one table, mark that column as FK on other tables.
+    """
+    out: Dict[str, Dict[str, List[str]]] = {
+        k: {
+            "primary_keys": list(v.get("primary_keys", [])),
+            "foreign_keys": list(v.get("foreign_keys", [])),
+        }
+        for k, v in schema_guess.items()
+    }
+    names = list(dfs.keys())
+    if len(names) < 2:
+        return out
+
+    for t in names:
+        for col in dfs[t].columns:
+            if col in out[t]["primary_keys"]:
+                continue
+            lc = str(col).lower()
+            if not (lc.endswith("_id") or lc == "id"):
+                continue
+            for other in names:
+                if other == t:
+                    continue
+                if col not in dfs[other].columns:
+                    continue
+                if col in out[other]["primary_keys"]:
+                    if col not in out[t]["foreign_keys"]:
+                        out[t]["foreign_keys"].append(col)
+        out[t]["foreign_keys"] = [
+            c
+            for c in dict.fromkeys(out[t]["foreign_keys"])
+            if c not in out[t]["primary_keys"]
+        ]
+    return out
+
+
 def guess_keys(dfs: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, List[str]]]:
     def table_tokens(table_name: str) -> List[str]:
         stem = table_name.rsplit(".", 1)[0].lower()
@@ -277,13 +462,22 @@ def guess_keys(dfs: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, List[str]]]:
 
     result: Dict[str, Dict[str, List[str]]] = {}
 
-    # Pre-compute tokens for cross-table FK guesses
     tokens_by_table = {name: table_tokens(name) for name in dfs.keys()}
 
     for name, df in dfs.items():
         primary: List[str] = []
         foreign: List[str] = []
-        table_tokens_current = tokens_by_table[name]
+        # Filename tokens + column-prefix tokens (e.g. final_dataset.csv + course_id/course_title → "course")
+        tok = set(tokens_by_table[name])
+        for col in df.columns:
+            lc = col.lower().strip()
+            if "_" in lc:
+                head = lc.split("_", 1)[0]
+                if len(head) > 1:
+                    tok.add(head)
+            if lc.endswith("_id") and len(lc) > 3:
+                tok.add(lc[:-3])
+        table_tokens_current = tok
 
         for col in df.columns:
             lc = col.lower().strip()
@@ -291,10 +485,11 @@ def guess_keys(dfs: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, List[str]]]:
                 primary.append(col)
                 continue
 
-            # Primary key patterns: table_id, tableid, or explicit *_id that matches table token.
             if lc.endswith("_id"):
                 prefix = lc[:-3]
-                if prefix in table_tokens_current or lc in {f"{t}_id" for t in table_tokens_current}:
+                if prefix in table_tokens_current or lc in {
+                    f"{t}_id" for t in table_tokens_current
+                }:
                     primary.append(col)
                 else:
                     foreign.append(col)
@@ -304,13 +499,46 @@ def guess_keys(dfs: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, List[str]]]:
                 primary.append(col)
                 continue
 
-            # Foreign key patterns: references another table token with _id suffix.
             if lc.endswith("_id"):
                 foreign.append(col)
 
-        # De-duplicate while preserving order
         primary = list(dict.fromkeys(primary))
         foreign = [c for c in dict.fromkeys(foreign) if c not in primary]
+
+        # Still no PK: unique id-like / index columns (incl. pandas "Unnamed: 0" exports)
+        if not primary and len(df) > 0:
+
+            def _surrogate_name(col) -> bool:
+                lc = str(col).lower().strip()
+                return (
+                    lc == "id"
+                    or lc.endswith("_id")
+                    or "unnamed" in lc
+                    or lc in ("index", "idx", "row", "row_id")
+                )
+
+            for col in df.columns:
+                if not _surrogate_name(col):
+                    continue
+                try:
+                    if df[col].notna().all() and df[col].nunique() == len(df):
+                        primary.append(col)
+                        break
+                except Exception:
+                    continue
+        # Any column that is unique per row (surrogate PK for wide tables without *_id)
+        if not primary and len(df) > 0:
+            for col in df.columns:
+                try:
+                    if df[col].notna().all() and df[col].nunique() == len(df):
+                        primary.append(col)
+                        break
+                except Exception:
+                    continue
+
+        primary = list(dict.fromkeys(primary))
+        foreign = [c for c in dict.fromkeys(foreign) if c not in primary]
+        primary, foreign = _normalize_table_keys(df, primary, foreign)
         result[name] = {"primary_keys": primary, "foreign_keys": foreign}
 
     return result
@@ -370,6 +598,11 @@ def infer_column_description(
     fks = set(keys.get("foreign_keys", []))
 
     if col in pks:
+        if "unnamed" in str(col).lower():
+            return (
+                f"Surrogate primary key (`row_index` / inferred from export) for `{table}`; "
+                "uniquely identifies each row."
+            )
         return f"Primary key for `{table}`; uniquely identifies each row."
     if col in fks:
         return "Foreign key; links this table to another entity for joins."
@@ -458,7 +691,8 @@ def generate_mermaid_erd(
         if df is not None:
             for col in df.columns:
                 dt = _dtype_word(df[col])
-                safe_col = re.sub(r"[^a-zA-Z0-9_]", "_", str(col))
+                disp = _humanize_column_name(str(col))
+                safe_col = re.sub(r"[^a-zA-Z0-9_]", "_", disp)
                 tag = ""
                 if col in keys["primary_keys"]:
                     tag = " PK"
@@ -496,9 +730,9 @@ def _erd_table_label(
     fks = keys.get("foreign_keys", [])
     parts = [table_name, "────────"]
     if pks:
-        parts.append("PK: " + ", ".join(pks))
+        parts.append("PK: " + ", ".join(_humanize_key_list(list(pks))))
     if fks:
-        parts.append("FK: " + ", ".join(fks))
+        parts.append("FK: " + ", ".join(_humanize_key_list(list(fks))))
     parts.append("")
     cols = list(df.columns)
     max_show = 14
@@ -509,7 +743,8 @@ def _erd_table_label(
         elif c in fks:
             mark = "  [FK]"
         dt = _dtype_word(df[c])
-        parts.append(f"{c} : {dt}{mark}")
+        c_disp = _humanize_column_name(c)
+        parts.append(f"{c_disp} : {dt}{mark}")
     if len(cols) > max_show:
         parts.append(f"... +{len(cols) - max_show} more columns")
     text = "\\n".join(parts)
@@ -520,10 +755,13 @@ def _assign_columns_to_logical_entities(
     df: pd.DataFrame, keys: Dict[str, List[str]]
 ) -> List[Tuple[str, List[str]]]:
     """
-    Split one wide table into 4+ logical ER groups (domain attributes) — each becomes a box.
+    Split one wide table into logical ER groups — each becomes a box.
+    PK/FK columns go first into KEYS so they are not buried in "remaining".
     Every column appears exactly once.
     """
     cols = list(df.columns)
+    pks = set(keys.get("primary_keys", []))
+    fks = set(keys.get("foreign_keys", []))
     assigned = set()
 
     def bucket(name: str, pred) -> Tuple[str, List[str]]:
@@ -536,9 +774,22 @@ def _assign_columns_to_logical_entities(
                 assigned.add(c)
         return (name, got)
 
+    groups: List[Tuple[str, List[str]]] = []
+
+    # Keys entity first (order: PK columns, then FK columns)
+    key_ordered = [c for c in cols if c in pks] + [
+        c for c in cols if c in fks and c not in pks
+    ]
+    for c in key_ordered:
+        assigned.add(c)
+    if key_ordered:
+        groups.append(("ENTITY · KEYS (PK / FK)", key_ordered))
+
     def core_p(c: str) -> bool:
         lc = c.lower()
         if lc in ("id", "course_id", "product_id", "order_id", "account_id"):
+            return True
+        if "unnamed" in lc:
             return True
         if "title" in lc or lc in ("url", "link", "name", "sku"):
             return True
@@ -570,7 +821,6 @@ def _assign_columns_to_logical_entities(
         )
     )
 
-    groups: List[Tuple[str, List[str]]] = []
     for title, pred in [
         ("ENTITY · CORE / IDENTITY", core_p),
         ("ENTITY · COMMERCE", commerce_p),
@@ -613,19 +863,106 @@ def _logical_entity_box_label(
     columns: List[str],
     keys: Dict[str, List[str]],
     table_file: str,
+    df: Optional[pd.DataFrame] = None,
 ) -> str:
+    """Richer box text: dtypes + optional null % — no extra entities, same groups."""
     pks = set(keys.get("primary_keys", []))
     fks = set(keys.get("foreign_keys", []))
-    lines = [group_title, f"from: {table_file}", "────────"]
+    n = len(columns)
+    lines = [
+        group_title,
+        f"from: {table_file}",
+        f"{n} field(s) · same CSV row",
+        "────────",
+    ]
     for c in columns:
+        cd = _humanize_column_name(c)
+        meta = ""
+        if df is not None and c in df.columns:
+            try:
+                dt = _dtype_word(df[c])
+                nullp = round(100.0 * float(df[c].isna().mean()), 1)
+                meta = f"  ({dt})"
+                if nullp > 0:
+                    meta += f" · {nullp}% null"
+            except Exception:
+                meta = ""
         if c in pks:
-            lines.append(f"*{c}")
+            lines.append(f"*{cd}{meta}  [PK]")
         elif c in fks:
-            lines.append(f"+{c}  [FK]")
+            lines.append(f"+{cd}{meta}  [FK]")
         else:
-            lines.append(f"  {c}")
+            lines.append(f"  {cd}{meta}")
     text = "\\n".join(lines)
     return text.replace('"', '\\"')
+
+
+def generate_physical_erd_dot(
+    dfs: Dict[str, pd.DataFrame],
+    schema_guess: Dict[str, Dict[str, List[str]]],
+) -> str:
+    """
+    Physical ERD: one box per uploaded table, every column listed with dtype and PK/FK role.
+    Relationship edges: child table → parent table (FK references PK).
+    """
+    if not dfs:
+        return 'digraph X { label="No datasets"; bgcolor="#f8fafc"; }'
+
+    rels = infer_relationships(schema_guess)
+    lines = [
+        "digraph PhysicalERD {",
+        "  compound=true;",
+        "  rankdir=LR;",
+        "  nodesep=0.55;",
+        "  ranksep=1.0;",
+        '  graph [fontname="Helvetica", fontsize=12, labelloc=t, label="Physical schema (wireframe) — tables & inferred PK/FK", bgcolor="#fafafa", pad=0.5, fontcolor="#334155"];',
+        '  splines=polyline;',
+        '  node [fontname="Helvetica", fontsize=8, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#64748b", penwidth=1.1];',
+        '  edge [fontname="Helvetica", fontsize=8, color="#2563eb", arrowsize=0.95, penwidth=1.15];',
+        "",
+    ]
+
+    max_cols = 48
+    for fname, df in dfs.items():
+        tid = _erd_table_id(fname)
+        keys = schema_guess.get(fname, {"primary_keys": [], "foreign_keys": []})
+        pks = set(keys.get("primary_keys", []))
+        fks = set(keys.get("foreign_keys", []))
+        safe_name = fname.replace('"', '\\"')
+        row_lines: List[str] = []
+        cols = list(df.columns)
+        for c in cols[:max_cols]:
+            dt = _dtype_word(df[c])
+            esc = _humanize_column_name(str(c)).replace('"', '\\"')
+            if c in pks:
+                row_lines.append(f"◆ {esc}   ({dt})   [PK]")
+            elif c in fks:
+                row_lines.append(f"◇ {esc}   ({dt})   [FK]")
+            else:
+                row_lines.append(f"· {esc}   ({dt})")
+        if len(cols) > max_cols:
+            row_lines.append(f"... +{len(cols) - max_cols} more columns")
+        body = "\\n".join(row_lines)
+        lbl = (
+            f"{safe_name}\\n{len(df):,} rows · {len(df.columns)} columns\\n"
+            f"────────\\n{body}"
+        )
+        lines.append(
+            f'  {tid} [label="{lbl}", margin=0.18, fillcolor="#f8fafc", penwidth=1.5];'
+        )
+
+    lines.append("")
+    # Child (has FK) → Parent (referenced PK)
+    for parent, child, fk in rels:
+        pid = _erd_table_id(parent)
+        cid = _erd_table_id(child)
+        fe = fk.replace('"', '\\"')
+        lines.append(
+            f'  {cid} -> {pid} [label="FK {fe}", arrowhead=vee, arrowsize=0.95, color="#1d4ed8", penwidth=1.25];'
+        )
+
+    lines.append("}")
+    return "\n".join(lines)
 
 
 def generate_dataset_erd_dot(
@@ -650,39 +987,50 @@ def generate_dataset_erd_dot(
 
     groups = _assign_columns_to_logical_entities(main_df, main_keys)
 
-    pk_txt = ", ".join(main_keys.get("primary_keys", [])[:5]) or "—"
-    fk_txt = ", ".join(main_keys.get("foreign_keys", [])[:6]) or "—"
+    pk_list = main_keys.get("primary_keys", [])[:5]
+    fk_list = main_keys.get("foreign_keys", [])[:6]
+    pk_txt = ", ".join(_humanize_key_list(pk_list)) if pk_list else "none inferred"
+    n_files = len(dfs)
+    if fk_list:
+        fk_txt = ", ".join(_humanize_key_list(fk_list))
+    else:
+        fk_txt = "— (no FK columns in file)" if n_files == 1 else "— (none)"
+    if n_files == 1:
+        rel_txt = f"{len(rels)} (needs 2+ CSVs for links)"
+    else:
+        rel_txt = f"{len(rels)} cross-table FK link(s)"
 
     shared_lab = (
         "Shared schema state\\n────────\\n"
         f"PK: {pk_txt}\\n"
         f"FK: {fk_txt}\\n"
-        f"Inferred rels (tables): {len(rels)}"
+        f"Cross-table links: {rel_txt}\\n"
+        f"Profiled: {n_files} file(s), {total_cols} cols"
     ).replace('"', '\\"')
 
     graph_title = (
-        "ERD architecture — layered model (your columns distributed across logical entities)"
+        "Wireframe ERD — layered logical model (blueprint view)"
     ).replace('"', '\\"')
 
     lines = [
         "digraph ERDLayered {",
         "  compound=true;",
         '  rankdir=TB;',
-        '  splines=spline;',
+        '  splines=polyline;',
         '  nodesep=0.45;',
         '  ranksep=0.85;',
-        f'  graph [fontname="Helvetica", fontsize=11, labelloc=t, label="{graph_title}", bgcolor="#f1f5f9", pad=0.5, fontcolor="#0f172a"];',
+        f'  graph [fontname="Helvetica", fontsize=11, labelloc=t, label="{graph_title}", bgcolor="#fafafa", pad=0.5, fontcolor="#334155"];',
         '  node [fontname="Helvetica", fontsize=8];',
-        '  edge [fontname="Helvetica", fontsize=7, color="#475569"];',
+        '  edge [fontname="Helvetica", fontsize=7, color="#64748b", penwidth=1.0];',
         "",
     ]
 
-    # --- ① Entry (blue) — like “script / ingest”
+    # --- ① Entry — cluster (solid outer border)
     lines.extend(
         [
             '  subgraph cluster_entry {',
             '    label="①  Entry / ingest"; labelloc=t;',
-            '    style="rounded,filled"; fillcolor="#dbeafe"; color="#2563eb"; fontcolor="#1e40af";',
+            '    style="rounded,filled"; fillcolor="#f0f9ff"; color="#64748b"; fontcolor="#334155";',
             "",
         ]
     )
@@ -691,17 +1039,17 @@ def generate_dataset_erd_dot(
         fn_esc = fname.replace('"', '\\"')
         lines.append(
             f'    {tid} [label="SOURCE\\n{fn_esc}\\n{len(df):,} rows · {len(df.columns)} cols", '
-            f'shape=note, style=filled, fillcolor="#eff6ff", color="#3b82f6", fontcolor="#1e3a8a", margin=0.12];'
+            f'shape=note, style=filled, fillcolor="#ffffff", color="#64748b", fontcolor="#0f172a", margin=0.12, penwidth=1.1];'
         )
     lines.append("  }")
     lines.append("")
 
-    # --- ② Logical entities (green) — 4+ boxes from real columns
+    # --- ② Logical entities
     lines.extend(
         [
             '  subgraph cluster_entities {',
-            '    label="②  Logical entities (attributes from your dataset)"; labelloc=t;',
-            '    style="rounded,filled"; fillcolor="#dcfce7"; color="#16a34a"; fontcolor="#14532d";',
+            '    label="②  Logical entities — dtype & null rate per field"; labelloc=t;',
+            '    style="rounded,filled"; fillcolor="#f0fdf4"; color="#64748b"; fontcolor="#334155";',
             "",
         ]
     )
@@ -709,71 +1057,71 @@ def generate_dataset_erd_dot(
     for i, (gtitle, gcols) in enumerate(groups):
         eid = f"ent_{i}"
         ent_ids.append(eid)
-        lab = _logical_entity_box_label(gtitle, gcols, main_keys, main_name)
+        lab = _logical_entity_box_label(gtitle, gcols, main_keys, main_name, main_df)
         lines.append(
             f'    {eid} [label="{lab}", shape=box, style="rounded,filled", fillcolor="#ffffff", '
-            f'color="#15803d", penwidth=1.4, fontcolor="#14532d", margin=0.14];'
+            f'color="#15803d", penwidth=1.2, fontcolor="#14532d", margin=0.14];'
         )
     lines.append("  }")
     lines.append("")
 
-    # --- ③ Shared keys (purple) — like etl_state
+    # --- ③ Shared keys
     lines.extend(
         [
             '  subgraph cluster_shared {',
             '    label="③  Shared keys & relationships"; labelloc=t;',
-            '    style="rounded,filled"; fillcolor="#ede9fe"; color="#6d28d9"; fontcolor="#5b21b6";',
-            f'    shared_keys [label="{shared_lab}", shape=box, style="rounded,filled", fillcolor="#ddd6fe", color="#6d28d9", penwidth=2, fontcolor="#4c1d95", margin=0.16];',
+            '    style="rounded,filled"; fillcolor="#faf5ff"; color="#64748b"; fontcolor="#334155";',
+            f'    shared_keys [label="{shared_lab}", shape=box, style="rounded,filled", fillcolor="#f5f3ff", color="#6d28d9", penwidth=1.2, fontcolor="#4c1d95", margin=0.16];',
             "  }",
             "",
         ]
     )
 
-    # --- ④ Artifacts / target (amber) — 3 boxes
+    # --- ④ Artifacts / target
     art_rows = f"{total_rows:,}"
     lines.extend(
         [
             '  subgraph cluster_artifacts {',
             '    label="④  Artifacts & target (ERD outputs)"; labelloc=t;',
-            '    style="rounded,filled"; fillcolor="#fef9c7"; color="#ca8a04"; fontcolor="#854d0e";',
-            f'    art_dict [label="Data dictionary\\n{total_cols} fields described", shape=box, style="rounded,filled", fillcolor="#fffbeb", color="#d97706", margin=0.1];',
-            '    art_mermaid [label="Mermaid ERD text\\nexport for docs", shape=box, style="rounded,filled", fillcolor="#fffbeb", color="#d97706", margin=0.1];',
-            f'    art_target [label="Profiled dataset\\n{art_rows} rows\\nready for load", shape=box, style="rounded,filled", fillcolor="#fef3c7", color="#b45309", margin=0.1];',
+            '    style="rounded,filled"; fillcolor="#fffbeb"; color="#64748b"; fontcolor="#334155";',
+            f'    art_dict [label="Data dictionary\\n{total_cols} fields described", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#ca8a04", margin=0.1];',
+            '    art_mermaid [label="Mermaid ERD text\\nexport for docs", shape=box, style="rounded,filled", fillcolor="#ffffff", color="#ca8a04", margin=0.1];',
+            f'    art_target [label="Profiled dataset\\n{art_rows} rows\\nready for load", shape=box, style="rounded,filled", fillcolor="#fffbeb", color="#b45309", margin=0.1];',
             "  }",
             "",
         ]
     )
 
-    # Cross-table FK edges (physical ERD) — between real tables if any
+    # Cross-table FK edges — solid lines
     for parent, child, fk in rels:
         pid = _erd_table_id(parent)
         cid = _erd_table_id(child)
         fk_esc = fk.replace('"', '\\"')
         lines.append(
-            f'  {pid} -> {cid} [label="{fk_esc} (FK)", color="#1d4ed8", penwidth=1.3, '
-            f'constraint=false, style=bold];'
+            f'  {pid} -> {cid} [label="{fk_esc} (FK)", color="#2563eb", penwidth=1.1, arrowsize=0.9, '
+            f'constraint=false];'
         )
 
-    # Ingest → each logical entity (same node IDs as FK edges use)
+    # Ingest → each logical entity
     for fname in dfs:
         tid = _erd_table_id(fname)
         for j in range(len(ent_ids)):
             lines.append(
-                f'  {tid} -> ent_{j} [label="columns", style=dashed, color="#64748b", penwidth=0.9];'
+                f'  {tid} -> ent_{j} [label="columns", color="#64748b", penwidth=1.0];'
             )
 
-    # Entities → shared (dashed, “join / keys”)
+    # Entities → shared
     for j, eid in enumerate(ent_ids):
         lines.append(
-            f'  {eid} -> shared_keys [label="infer keys", style=dashed, color="#7c3aed", penwidth=1];'
+            f'  {eid} -> shared_keys [label="infer keys", color="#7c3aed", penwidth=1.05];'
         )
 
     # Shared → artifacts
     lines.extend(
         [
-            '  shared_keys -> art_dict [label="feeds", color="#b45309", penwidth=1.2];',
-            '  shared_keys -> art_mermaid [label="feeds", color="#b45309", penwidth=1.2];',
-            '  shared_keys -> art_target [label="feeds", color="#b45309", penwidth=1.2];',
+            '  shared_keys -> art_dict [label="feeds", color="#b45309", penwidth=1.1];',
+            '  shared_keys -> art_mermaid [label="feeds", color="#b45309", penwidth=1.1];',
+            '  shared_keys -> art_target [label="feeds", color="#b45309", penwidth=1.1];',
             "",
         ]
     )
@@ -781,8 +1129,8 @@ def generate_dataset_erd_dot(
     # Optional: light link between logical entities (same grain) — chain
     for j in range(len(ent_ids) - 1):
         lines.append(
-            f'  ent_{j} -> ent_{j + 1} [label="1:1 via row", style=dotted, color="#86efac", '
-            f'constraint=false, fontsize=7];'
+            f'  ent_{j} -> ent_{j + 1} [label="1:1 via row", color="#16a34a", '
+            f'constraint=false, fontsize=7, penwidth=0.9];'
         )
 
     lines.append("}")
@@ -965,8 +1313,8 @@ def render_schema_pipeline_layout(dfs: Dict[str, pd.DataFrame]) -> None:
         fk_all.extend(t.get("foreign_keys", []))
     pk_unique = list(dict.fromkeys(pk_all))
     fk_unique = list(dict.fromkeys(fk_all))
-    pk_txt = ", ".join(pk_unique[:3]) if pk_unique else "none detected yet"
-    fk_txt = ", ".join(fk_unique[:3]) if fk_unique else "none detected yet"
+    pk_txt = ", ".join(_humanize_key_list(pk_unique[:3])) if pk_unique else "none detected yet"
+    fk_txt = ", ".join(_humanize_key_list(fk_unique[:3])) if fk_unique else "none detected yet"
     relationships = infer_relationships(schema_guess)
 
     def source_payload(idx: int):
@@ -1122,15 +1470,25 @@ def planned_transforms_named(df: pd.DataFrame) -> List[str]:
     if bad:
         steps.append(f"Impute or flag nulls in: {', '.join(bad[:6])}")
     if len(steps) < 3:
-        steps.append(f"Coerce dtypes for: {', '.join(cols[:8])}…")
+        if len(cols) <= 10:
+            steps.append(f"Coerce dtypes for: {', '.join(cols)}")
+        else:
+            steps.append(
+                f"Coerce dtypes for **{len(cols)}** columns (e.g. {', '.join(cols[:5])}, …)"
+            )
     return steps[:4]
+
+
+def _html_strip_md_bold(s: str) -> str:
+    """Strip **bold** for plain HTML text."""
+    return re.sub(r"\*\*(.+?)\*\*", r"\1", s)
 
 
 def render_schema_pipeline_layout_v2(
     dfs: Dict[str, pd.DataFrame],
     schema_guess: Optional[Dict[str, Dict[str, List[str]]]] = None,
 ) -> None:
-    """Schema inference pipeline: **real column names**, keys, and join edges from your data."""
+    """Schema inference pipeline — wireframe UI: columns, keys, joins (ETL lanes)."""
     if not dfs:
         st.info("Upload datasets first to preview pipeline layout.")
         return
@@ -1150,101 +1508,130 @@ def render_schema_pipeline_layout_v2(
     pk_unique = list(dict.fromkeys(pk_all))
     fk_unique = list(dict.fromkeys(fk_all))
 
-    m1, m2, m3 = st.columns(3)
-    with m1:
-        st.metric("Sources", len(source_names))
-    with m2:
-        st.metric("Relationships", len(relationships))
-    with m3:
-        st.metric("Fields profiled", total_cols)
+    h = html.escape
 
-    st.markdown("")
+    # Metrics strip (wireframe blueprint)
+    st.markdown(
+        f"""
+<div class="dw-wf-board">
+  <div class="dw-wf-board-title">Schema inference · wireframe blueprint</div>
+  <div class="dw-wf-metrics">
+    <div class="dw-wf-metric-cell"><span class="dw-wf-num">{len(source_names)}</span><span class="dw-wf-lbl">SOURCES</span></div>
+    <div class="dw-wf-metric-cell"><span class="dw-wf-num">{len(relationships)}</span><span class="dw-wf-lbl">CROSS-TABLE LINKS</span></div>
+    <div class="dw-wf-metric-cell"><span class="dw-wf-num">{total_cols}</span><span class="dw-wf-lbl">FIELDS PROFILED</span></div>
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
     lane_e, lane_t, lane_l = st.columns([1, 1.15, 1])
 
+    # --- EXTRACT lane ---
+    extract_cards: List[str] = []
+    for name in source_names[:3]:
+        df = dfs[name]
+        sg = schema_guess.get(name, {"primary_keys": [], "foreign_keys": []})
+        pk_str = ", ".join(_humanize_key_list(sg["primary_keys"])) or "—"
+        fk_str = ", ".join(_humanize_key_list(sg["foreign_keys"])) or "—"
+        cols_preview = ", ".join(f"<code>{h(str(c))}</code>" for c in list(df.columns)[:8])
+        if len(df.columns) > 8:
+            cols_preview += f" … +{len(df.columns) - 8}"
+        q = _quality_tag(df)
+        qcls = "dw-wf-pill-ok" if q == "Ready" else ("dw-wf-pill-warn" if q == "Watch" else "dw-wf-pill-bad")
+        extract_cards.append(
+            f"""
+<div class="dw-wf-card">
+  <div class="dw-wf-card-title">{h(name)}</div>
+  <div class="dw-wf-meta">{len(df):,} rows · {len(df.columns)} cols</div>
+  <div class="dw-wf-code">{cols_preview}</div>
+  <div class="dw-wf-keys">PK <code>{h(pk_str)}</code> · FK <code>{h(fk_str)}</code></div>
+  <span class="dw-wf-pill {qcls}">{h(q)}</span>
+</div>
+"""
+        )
     with lane_e:
         st.markdown(
-            '<p style="margin:0 0 8px 0;font-size:0.72rem;font-weight:800;letter-spacing:0.12em;color:#1d4ed8;">EXTRACT</p>',
+            '<div class="dw-wf-lane-h e">Extract · sources</div>',
             unsafe_allow_html=True,
         )
-        src_count = min(3, len(source_names))
-        for i in range(src_count):
-            name = source_names[i]
-            df = dfs[name]
-            col_preview = ", ".join(f"`{c}`" for c in list(df.columns)[:10])
-            if len(df.columns) > 10:
-                col_preview += f" … **+{len(df.columns) - 10}** more"
-            sg = schema_guess.get(name, {"primary_keys": [], "foreign_keys": []})
-            with st.container(border=True):
-                st.markdown(f"**`{name}`**")
-                st.caption(f"{len(df):,} rows · {len(df.columns)} cols")
-                st.markdown(f"**Columns:** {col_preview}")
-                st.caption(
-                    f"Per-table keys — PK: `{', '.join(sg['primary_keys']) or '—'}` · "
-                    f"FK: `{', '.join(sg['foreign_keys']) or '—'}`"
-                )
-                q = _quality_tag(df)
-                if q == "Ready":
-                    st.success(q)
-                elif q == "Watch":
-                    st.warning(q)
-                else:
-                    st.error(q)
-            st.markdown("")
+        st.markdown("".join(extract_cards), unsafe_allow_html=True)
 
+    # --- TRANSFORM lane ---
+    first_table = source_names[0]
+    first_df = dfs[first_table]
+    inf_rows: List[str] = []
+    for tname in source_names[:4]:
+        sg = schema_guess.get(tname, {"primary_keys": [], "foreign_keys": []})
+        pk_h = ", ".join(_humanize_key_list(sg["primary_keys"])) or "—"
+        fk_h = ", ".join(_humanize_key_list(sg["foreign_keys"])) or "—"
+        inf_rows.append(
+            f"<li><strong>{h(tname)}</strong> — PK <code>{h(pk_h)}</code> · FK <code>{h(fk_h)}</code></li>"
+        )
+    if relationships:
+        rel_rows = "".join(
+            f"<li>{h(parent)} <span style=\"color:#64748b\">—[{h(fk)}]→</span> {h(child)}</li>"
+            for parent, child, fk in relationships[:6]
+        )
+        join_note = (
+            f'<div class="dw-wf-note"><strong>Inferred joins</strong><ul class="dw-wf-ul">{rel_rows}</ul></div>'
+        )
+    else:
+        join_note = (
+            '<div class="dw-wf-note">No cross-table joins inferred — single file or no matching FK column names.</div>'
+        )
+
+    plan_lis = "".join(
+        f"<li>{h(_html_strip_md_bold(step))}</li>" for step in planned_transforms_named(first_df)
+    )
+    pk_hint = ", ".join(_humanize_key_list(pk_unique[:4])) if pk_unique else "—"
+    fk_hint = ", ".join(_humanize_key_list(fk_unique[:4])) if fk_unique else "—"
+
+    transform_html = f"""
+<div class="dw-wf-card">
+  <div class="dw-wf-card-title">Inference · keys & joins</div>
+  <ul class="dw-wf-ul">{"".join(inf_rows)}</ul>
+  {join_note}
+  <span class="dw-wf-pill dw-wf-pill-ok" style="margin-top:8px;">Status: inferred</span>
+</div>
+<div class="dw-wf-card">
+  <div class="dw-wf-card-title">Planned transforms · {h(first_table)}</div>
+  <ul class="dw-wf-ul">{plan_lis}</ul>
+  <div class="dw-wf-note">Preview — heuristic list only. Aggregator applies merges; full transform engine is not run here.</div>
+</div>
+<div class="dw-wf-card">
+  <div class="dw-wf-card-title">HITL gate</div>
+  <div class="dw-wf-keys">PK <code>{h(pk_hint)}</code> · FK <code>{h(fk_hint)}</code></div>
+  <div class="dw-wf-meta">Confirm in Step 3 · HITL #1 before Aggregator.</div>
+  <span class="dw-wf-pill dw-wf-pill-ok">Ready for review → Step 3</span>
+</div>
+"""
     with lane_t:
         st.markdown(
-            '<p style="margin:0 0 8px 0;font-size:0.72rem;font-weight:800;letter-spacing:0.12em;color:#b45309;">TRANSFORM</p>',
+            '<div class="dw-wf-lane-h t">Transform · inference & plan</div>',
             unsafe_allow_html=True,
         )
-        first_table = source_names[0]
-        first_df = dfs[first_table]
-        with st.container(border=True):
-            st.markdown("**Inference (keys & joins)**")
-            for tname in source_names[:4]:
-                sg = schema_guess.get(tname, {"primary_keys": [], "foreign_keys": []})
-                st.caption(
-                    f"`{tname}` → PK **{', '.join(sg['primary_keys']) or '—'}** · "
-                    f"FK **{', '.join(sg['foreign_keys']) or '—'}**"
-                )
-            if relationships:
-                st.caption("**Inferred joins:**")
-                for parent, child, fk in relationships[:6]:
-                    st.caption(f"• `{parent}` —[{fk}]→ `{child}`")
-            else:
-                st.caption(
-                    "**No cross-table joins inferred** — single file or no matching FK columns."
-                )
-            st.success("Inferred")
-        with st.container(border=True):
-            st.markdown(f"**Planned transforms · `{first_table}`**")
-            for step in planned_transforms_named(first_df):
-                st.caption(f"• {step}")
-            st.warning("Awaiting run")
-        with st.container(border=True):
-            st.markdown("**HITL gate**")
-            st.caption(
-                f"Validate: `{', '.join(fk_unique[:4]) if fk_unique else 'join keys'}` "
-                f"and nulls before merge."
-            )
-            st.warning("Needs approval")
+        st.markdown(transform_html, unsafe_allow_html=True)
 
+    # --- LOAD lane ---
+    names_short = ", ".join(source_names[:3])
+    if len(source_names) > 3:
+        names_short += " …"
+    load_html = f"""
+<div class="dw-wf-card">
+  <div class="dw-wf-card-title">Artifacts & load</div>
+  <div class="dw-wf-meta">ERD edges: <strong>{len(relationships)}</strong> — tables {h(names_short)}</div>
+  <div class="dw-wf-meta">Data dictionary: <strong>{total_cols}</strong> fields · <strong>{len(dfs)}</strong> table(s)</div>
+  <div class="dw-wf-meta">Rows profiled: <strong>{total_rows:,}</strong></div>
+  <span class="dw-wf-pill dw-wf-pill-ok">Export-ready</span>
+</div>
+"""
     with lane_l:
         st.markdown(
-            '<p style="margin:0 0 8px 0;font-size:0.72rem;font-weight:800;letter-spacing:0.12em;color:#15803d;">LOAD</p>',
+            '<div class="dw-wf-lane-h l">Load · outputs</div>',
             unsafe_allow_html=True,
         )
-        with st.container(border=True):
-            st.markdown("**Artifacts (this dataset)**")
-            st.caption(
-                f"ERD: **{len(relationships)}** edge(s) between tables "
-                f"`{', '.join(source_names[:3])}` …"
-            )
-            st.caption(
-                f"Data dictionary: **{total_cols}** fields across **{len(dfs)}** table(s)"
-            )
-            st.caption(f"Row count: **{total_rows:,}**")
-            st.info("Export-ready")
+        st.markdown(load_html, unsafe_allow_html=True)
 
 
 # Sidebar
@@ -1392,6 +1779,9 @@ elif page == "2 · Mapper (Architect)":
         with col_a:
             if st.button("▶ Run Mapper (mock)", type="primary", use_container_width=True):
                 schema_guess = guess_keys(st.session_state.uploaded_dfs)
+                schema_guess = enrich_cross_table_foreign_keys(
+                    st.session_state.uploaded_dfs, schema_guess
+                )
                 mermaid_erd = generate_mermaid_erd(
                     schema_guess, st.session_state.uploaded_dfs
                 )
@@ -1419,7 +1809,7 @@ elif page == "2 · Mapper (Architect)":
         if st.session_state.mapper_output:
             out = st.session_state.mapper_output
             tab_schema, tab_erd, tab_dd = st.tabs(
-                ["Schema inference", "ERD architecture", "Data dictionary"]
+                ["Schema inference", "ERD (wireframe)", "Data dictionary"]
             )
             with tab_schema:
                 render_schema_pipeline_layout_v2(
@@ -1427,11 +1817,26 @@ elif page == "2 · Mapper (Architect)":
                     out["schema_guess"],
                 )
             with tab_erd:
-                dot = generate_dataset_erd_dot(
+                st.markdown("##### Layered ERD — wireframe blueprint")
+                st.caption(
+                    "Dashed clusters & edges = blueprint style (not a final DB diagram). "
+                    "Ingest → logical entities → shared keys → artifacts. "
+                    "Expand **Physical table detail** for a flat column list with PK/FK tags."
+                )
+                dot_layered = generate_dataset_erd_dot(
                     st.session_state.uploaded_dfs,
                     out["schema_guess"],
                 )
-                st.graphviz_chart(dot, use_container_width=True)
+                st.graphviz_chart(dot_layered, use_container_width=True)
+                with st.expander("Physical table detail (columns, PK/FK)", expanded=False):
+                    st.caption(
+                        "One box per CSV. ◆ = PK, ◇ = FK, · = attribute. Edges: child → parent when FKs link tables."
+                    )
+                    dot_physical = generate_physical_erd_dot(
+                        st.session_state.uploaded_dfs,
+                        out["schema_guess"],
+                    )
+                    st.graphviz_chart(dot_physical, use_container_width=True)
                 with st.expander("Mermaid ERD (same schema, text)", expanded=False):
                     st.code(out["mermaid_erd"], language="text")
                 with st.expander(
