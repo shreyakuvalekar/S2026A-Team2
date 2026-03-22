@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: data-pipeline-app
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      - ./datasets:/app/datasets
+      - ./output:/app/output
+    environment:
+      - PYTHONUNBUFFERED=1

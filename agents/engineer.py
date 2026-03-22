@@ -88,7 +88,6 @@ def engineer_node(state: dict) -> dict:
         "json": json,
         "result": None,
     }
-
     verdict = "pass"
     transformed_data = None
     error_msg = ""
