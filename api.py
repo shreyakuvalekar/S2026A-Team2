@@ -166,24 +166,47 @@ def run_pipeline_endpoint():
 
     body = request.get_json(silent=True) or {}
 
-    source_path = body.get("source_path") or _uploaded_file_path or "datasets/coursea_data.csv"
+    source_type = body.get("source_type", "csv")
+    connection_port = body.get("connection_port")
+    user_instructions = body.get("user_instructions", "")
+
     target_db_path = body.get("target_db_path", "output/etl_output.db")
     target_table = body.get("target_table", "courses")
     if_exists = body.get("if_exists", "replace")
-    user_instructions = body.get(
-        "user_instructions",
-        "drop rows where rating is null, normalize enrollment counts to integers. "
-        "drop rows where course_title contains non-ASCII characters"
-    )
+    target_path = body.get("target_path", "")
+
+    if source_type == "csv":
+        source_path = body.get("source_path") or _uploaded_file_path or "datasets/coursea_data.csv"
+        source_config = {"path": source_path}
+
+    elif source_type == "api":
+        source_config = {
+            "symbol": body.get("symbol"),
+            "interval": body.get("interval", "Daily"),
+            "apikey": body.get("apikey"),
+        }
+
+        missing = [k for k, v in source_config.items() if not v]
+        if missing:
+            return jsonify({
+                "status": "error",
+                "error": f"Missing required API source fields: {missing}"
+            }), 400
+        source_path = None
+
+    else:
+        return jsonify({
+            "status": "error",
+            "error": f"Unsupported source_type '{source_type}'. Use 'csv' or 'api'."
+        }), 400
 
     os.makedirs("output", exist_ok=True)
 
     try:
-        print(f"[INFO] Running pipeline on source: {source_path}")
-
         final_state = run_pipeline(
-            source_type="csv",
-            source_config={"path": source_path},
+            source_type=source_type,
+            source_config=source_config,
+            target_path=target_path,
             target_db={
                 "type": "sqlite",
                 "path": target_db_path,
@@ -191,19 +214,37 @@ def run_pipeline_endpoint():
                 "if_exists": if_exists,
             },
             user_instructions=user_instructions,
+            connection_port=connection_port,
         )
 
         rows_written = _count_rows(target_db_path, target_table)
 
         result = {
             "status": "success",
+            "source_type": source_type,
             "source_path": source_path,
             "target_db_path": target_db_path,
             "target_table": target_table,
             "rows_written": rows_written,
-            "transformation_plan": final_state.get("transformation_plan", ""),
-            "transformation_code": final_state.get("transformation_code", ""),
-            "engineer_verdict": final_state.get("engineer_verdict", ""),
+            "agent_outputs": {
+                "scout": {
+                    "raw_schema": final_state.get("raw_schema", {}),
+                    "record_count": len(final_state.get("raw_data") or []),
+                    "sample_records": (final_state.get("raw_data") or [])[:5],
+                },
+                "architect": {
+                    "transformation_plan": final_state.get("transformation_plan", ""),
+                },
+                "engineer": {
+                    "transformation_code": final_state.get("transformation_code", ""),
+                    "verdict": final_state.get("engineer_verdict", ""),
+                    "error": final_state.get("engineer_error", ""),
+                    "output_record_count": len(
+                        final_state.get("transformed_data") or []
+                    ),
+                    "sample_output": (final_state.get("transformed_data") or [])[:5],
+                },
+            },
             "audit_log": final_state.get("audit_log", []),
         }
 
@@ -213,12 +254,13 @@ def run_pipeline_endpoint():
     except Exception as e:
         error_result = {
             "status": "error",
+            "source_type": source_type,
+            "connection_port": connection_port,
             "error": str(e),
             "traceback": traceback.format_exc(),
         }
         _last_run = error_result
         return jsonify(error_result), 500
-
 
 # --------------------------------------------------
 # 3. Get Results from SQLite
@@ -496,13 +538,7 @@ def status():
             "status": "never_run",
             "message": "No pipeline run yet. POST to /api/run."
         })
-
-    return jsonify({
-        "status": _last_run.get("status"),
-        "rows_written": _last_run.get("rows_written"),
-        "engineer_verdict": _last_run.get("engineer_verdict"),
-        "error": _last_run.get("error"),
-    })
+    return jsonify(_last_run)
 
 
 # --------------------------------------------------
@@ -530,8 +566,12 @@ def _count_rows(db_path: str, table: str):
 # --------------------------------------------------
 
 if __name__ == "__main__":
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "5000"))
+
     print("=" * 50)
     print("  DataWeave Backend API")
-    print("  http://localhost:5000/health")
+    print(f"  http://{host}:{port}/health")
     print("=" * 50)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+
+    app.run(host=host, port=port, debug=False)
