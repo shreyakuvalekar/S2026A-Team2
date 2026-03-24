@@ -37,7 +37,7 @@ Remember: assign final output to `result` as a list of dicts."""
 def _get_llm() -> ChatOllama:
     base_url = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     return ChatOllama(
-        model="qwen2.5:14b-instruct-q4_K_M",
+        model="llama3.2:1b",
         base_url=base_url,
         temperature=0.0,
     )
