@@ -43,6 +43,61 @@ def _get_llm() -> ChatOllama:
     )
 
 
+def _compute_diff(raw_data: list, transformed_data: list) -> dict:
+    """Compute what changed between raw_data and transformed_data.
+
+    Uses SequenceMatcher (LCS) to align rows so that:
+    - 'delete' opcodes → truly removed rows (never modified)
+    - 'replace' opcodes → modified rows (value changes); extra raw rows in an
+      unequal-length replace block are treated as removed
+    - 'equal' opcodes → unchanged rows
+    """
+    from difflib import SequenceMatcher
+
+    raw_keys = [json.dumps(r, sort_keys=True, default=str) for r in raw_data]
+    tr_keys = [json.dumps(r, sort_keys=True, default=str) for r in transformed_data]
+
+    matcher = SequenceMatcher(None, raw_keys, tr_keys, autojunk=False)
+
+    removed_rows = []
+    modified_rows = []
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "delete":
+            removed_rows.extend(raw_data[i1:i2])
+        elif tag == "replace":
+            raw_block = raw_data[i1:i2]
+            tr_block = transformed_data[j1:j2]
+            for raw_row, tr_row in zip(raw_block, tr_block):
+                changed_fields = [
+                    k for k in set(raw_row) | set(tr_row)
+                    if raw_row.get(k) != tr_row.get(k)
+                ]
+                modified_rows.append({
+                    "before": raw_row,
+                    "after": tr_row,
+                    "changed_fields": changed_fields,
+                })
+            # Any extra raw rows in the block have no transformed counterpart
+            if len(raw_block) > len(tr_block):
+                removed_rows.extend(raw_block[len(tr_block):])
+
+    raw_cols = set(raw_data[0].keys()) if raw_data else set()
+    tr_cols = set(transformed_data[0].keys()) if transformed_data else set()
+
+    return {
+        "rows_before": len(raw_data),
+        "rows_after": len(transformed_data),
+        "rows_removed_count": len(removed_rows),
+        "removed_rows": removed_rows[:100],
+        "modified_rows": modified_rows[:100],
+        "columns_before": list(raw_cols),
+        "columns_after": list(tr_cols),
+        "columns_dropped": list(raw_cols - tr_cols),
+        "columns_added": list(tr_cols - raw_cols),
+    }
+
+
 def _extract_code(text: str) -> str:
     """Strip markdown code fences if model adds them."""
     lines = text.strip().splitlines()
@@ -91,6 +146,7 @@ def engineer_node(state: dict) -> dict:
 
     verdict = "pass"
     transformed_data = None
+    transformation_diff = {}
     error_msg = ""
 
     try:
@@ -101,11 +157,17 @@ def engineer_node(state: dict) -> dict:
         if not isinstance(transformed_data, list):
             raise TypeError(f"'result' must be a list of dicts, got {type(transformed_data).__name__}")
 
+        transformation_diff = _compute_diff(raw_data, transformed_data)
+
         audit_log.append({
             "timestamp": datetime.utcnow().isoformat(),
             "agent": "Engineer",
             "action": "execute",
-            "summary": f"Code executed successfully. {len(transformed_data)} records produced.",
+            "summary": (
+                f"Code executed successfully. {len(transformed_data)} records produced. "
+                f"{transformation_diff['rows_removed_count']} rows removed, "
+                f"{len(transformation_diff['modified_rows'])} rows modified."
+            ),
         })
 
     except Exception as exc:
@@ -125,6 +187,7 @@ def engineer_node(state: dict) -> dict:
     return {
         "transformation_code": transformation_code,
         "transformed_data": transformed_data,
+        "transformation_diff": transformation_diff,
         "engineer_verdict": verdict,
         "engineer_error": error_msg,
         "retry_count": retry_count + (1 if verdict == "retry" else 0),
