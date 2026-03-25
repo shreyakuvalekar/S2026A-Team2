@@ -4,190 +4,203 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
-import streamlit.components.v1 as components
 import streamlit as st
+import streamlit.components.v1 as components
 
 
-# Page config (must be first Streamlit command)
-st.set_page_config(
-    page_title="DataWeaver – Agentic Data Pipeline",
-    page_icon="🧵",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="DATA WEAVE", page_icon="🧵", layout="wide")
 
-APP_BUILD = "dataweaver-erd-v13-wireframe"
 
-# Custom styles — dashboard look & feel
+# -----------------------------------------------------------------------------
+# Theme / style (from app_t1)
+# -----------------------------------------------------------------------------
 def _inject_styles() -> None:
     st.markdown(
         """
         <style>
-            /* Fonts & base */
-            @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
-            @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
             html, body, [class*="css"] { font-family: 'DM Sans', system-ui, sans-serif; }
-            .block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1200px; }
-
-            /* Hero / page title */
-            .dw-hero {
-                background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0c4a6e 100%);
-                color: #f8fafc;
-                padding: 1.25rem 1.5rem;
-                border-radius: 12px;
-                margin-bottom: 1.25rem;
-                border: 1px solid rgba(56, 189, 248, 0.25);
-                box-shadow: 0 4px 24px rgba(15, 23, 42, 0.35);
+            .block-container { padding-top: 1.35rem; padding-bottom: 1.8rem; max-width: 1220px; }
+            [data-testid="stAppViewContainer"] {
+                background:
+                    radial-gradient(1200px 420px at 8% -10%, rgba(59, 130, 246, 0.16), transparent 45%),
+                    radial-gradient(900px 420px at 100% 0%, rgba(14, 116, 144, 0.12), transparent 42%),
+                    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 48%, #eef6ff 100%);
             }
-            .dw-hero h1 { margin: 0; font-size: 1.65rem; font-weight: 700; letter-spacing: -0.02em; }
-            .dw-hero p { margin: 0.5rem 0 0 0; opacity: 0.88; font-size: 0.95rem; line-height: 1.45; }
+            .main .block-container { background: transparent; }
+
+            .dw-hero {
+                background: linear-gradient(135deg, #0f2747 0%, #0f172a 45%, #0b4f7a 100%);
+                color: #93c5fd;
+                padding: 1.1rem 1.3rem;
+                border-radius: 12px;
+                margin-bottom: 1rem;
+                border: 1px solid rgba(125, 211, 252, 0.28);
+                box-shadow: 0 12px 24px rgba(15, 23, 42, 0.32);
+            }
+            .dw-hero h1 { margin: 0; font-size: 1.35rem; font-weight: 700; color: #93c5fd; }
+            .dw-hero p { margin: 0.45rem 0 0 0; opacity: 0.95; font-size: 0.92rem; color: #93c5fd; }
             .dw-badge {
                 display: inline-block;
-                background: rgba(56, 189, 248, 0.2);
-                color: #7dd3fc;
-                padding: 0.2rem 0.6rem;
+                background: rgba(14, 165, 233, 0.24);
+                color: #93c5fd;
+                padding: 0.18rem 0.55rem;
                 border-radius: 6px;
-                font-size: 0.75rem;
+                font-size: 0.72rem;
                 font-weight: 600;
-                margin-bottom: 0.5rem;
-                letter-spacing: 0.04em;
+                margin-bottom: 0.45rem;
             }
 
-            /* Cards */
             .dw-card {
-                background: #f8fafc;
-                border: 1px solid #e2e8f0;
-                border-radius: 10px;
-                padding: 1rem 1.15rem;
-                margin: 0.75rem 0;
-            }
-
-            /* Sidebar polish */
-            [data-testid="stSidebar"] {
-                background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
-            }
-            [data-testid="stSidebar"] .block-container { padding-top: 1.25rem; }
-            [data-testid="stSidebar"] label, [data-testid="stSidebar"] p,
-            [data-testid="stSidebar"] span { color: #cbd5e1 !important; }
-            [data-testid="stSidebar"] .stRadio label { font-size: 0.9rem; }
-
-            /* Primary buttons */
-            .stButton > button[kind="primary"] {
-                background: linear-gradient(180deg, #0284c7, #0369a1);
-                border: none;
-                font-weight: 600;
-            }
-            .stButton > button[kind="primary"]:hover {
-                background: linear-gradient(180deg, #0ea5e9, #0284c7);
-            }
-
-            /* File uploader */
-            [data-testid="stFileUploader"] section {
-                border-radius: 10px;
-                border: 2px dashed #94a3b8;
-                background: #f1f5f9;
-            }
-            [data-testid="stFileUploader"] svg {
-                width: 2.35rem !important;
-                height: 2.35rem !important;
-                min-width: 2.35rem !important;
-            }
-            [data-testid="stFileUploader"] section > div {
-                gap: 0.35rem 0.75rem !important;
-                align-items: center !important;
-            }
-            /* Relabel secondary button to "Add files" */
-            [data-testid="stFileUploader"] button[kind="secondary"],
-            [data-testid="stFileUploader"] button[data-testid="baseButton-secondary"] {
-                position: relative !important;
-                min-width: 5.5rem !important;
-                min-height: 2.25rem !important;
-                padding: 0.375rem 0.75rem !important;
-                font-size: 0 !important;
-                line-height: 0 !important;
-                color: transparent !important;
-            }
-            [data-testid="stFileUploader"] button[kind="secondary"] *,
-            [data-testid="stFileUploader"] button[data-testid="baseButton-secondary"] * {
-                font-size: 0 !important;
-                line-height: 0 !important;
-                opacity: 0 !important;
-                max-width: 0 !important;
-                max-height: 0 !important;
-                overflow: hidden !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                border: none !important;
-                position: absolute !important;
-                inset: 0 auto auto 0 !important;
-                clip-path: inset(50%) !important;
-            }
-            [data-testid="stFileUploader"] button[kind="secondary"]::after,
-            [data-testid="stFileUploader"] button[data-testid="baseButton-secondary"]::after {
-                content: "Add files";
-                position: absolute !important;
-                left: 50% !important;
-                top: 50% !important;
-                transform: translate(-50%, -50%) !important;
-                font-size: 0.9rem !important;
-                line-height: 1.2 !important;
-                color: #334155 !important;
-                font-weight: 600 !important;
-                white-space: nowrap !important;
-                opacity: 1 !important;
-                clip-path: none !important;
-            }
-
-            /* Schema pipeline layout */
-            .dw-pipe-wrap {
-                background: #f8fafc;
-                border: 1px solid #e2e8f0;
-                border-radius: 12px;
-                padding: 1rem;
-                margin: 0.5rem 0 1rem 0;
-            }
-            .dw-pipe-row {
-                display: grid;
-                grid-template-columns: 1fr 56px 1fr 56px 1fr;
-                align-items: center;
-                gap: 0.5rem;
-                margin-bottom: 0.8rem;
-            }
-            .dw-node {
                 background: #ffffff;
-                border: 2px solid #cbd5e1;
+                border: 1px solid #dbeafe;
+                border-radius: 10px;
+                padding: 0.8rem 1rem;
+                margin: 0.75rem 0;
+                box-shadow: 0 6px 18px rgba(30, 41, 59, 0.07);
+            }
+            .dw-topbar {
+                width: 100%;
+                background: linear-gradient(90deg, #0f2747 0%, #0ea5e9 55%, #22d3ee 100%);
+                border-radius: 0;
+                padding: 0.28rem 0.75rem;
+                margin: 2.2rem -0.25rem 0.65rem -0.25rem;
+                position: sticky;
+                top: 0;
+                z-index: 999;
+                box-shadow: 0 1px 6px rgba(2, 132, 199, 0.22);
+            }
+            .dw-topbar-text {
+                color: #93c5fd;
+                font-size: 0.74rem;
+                font-weight: 700;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+            }
+            .dw-feature-grid {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 0.7rem;
+                margin: 0.35rem 0 0.8rem 0;
+            }
+            .dw-feature {
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
                 border-radius: 10px;
                 padding: 0.7rem 0.8rem;
-                min-height: 94px;
+                box-shadow: 0 1px 6px rgba(15, 23, 42, 0.05);
             }
-            .dw-node h4 {
-                margin: 0;
-                font-size: 0.9rem;
-                color: #0f172a;
+            .dw-feature h4 { margin: 0; font-size: 0.87rem; color: #0f172a; }
+            .dw-feature p { margin: 0.25rem 0 0 0; font-size: 0.78rem; color: #64748b; line-height: 1.35; }
+            .dw-upload-panel {
+                background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+                border: 1px solid #dbeafe;
+                border-radius: 12px;
+                padding: 0.8rem 0.9rem;
+                margin-top: 0.2rem;
             }
-            .dw-node p {
-                margin: 0.2rem 0 0 0;
-                font-size: 0.76rem;
-                color: #475569;
-                line-height: 1.35;
+
+            [data-testid="stSidebar"] {
+                background: linear-gradient(180deg, #0b223f 0%, #102a43 52%, #0f172a 100%);
             }
-            .dw-arrow {
-                text-align: center;
-                font-size: 1.2rem;
-                color: #0d9488;
-                font-weight: 700;
+            [data-testid="stSidebar"] .block-container { padding-top: 1.15rem; }
+            [data-testid="stSidebar"] label,
+            [data-testid="stSidebar"] p,
+            [data-testid="stSidebar"] span { color: #cbd5e1 !important; }
+            [data-testid="stSidebar"] h1,
+            [data-testid="stSidebar"] h2,
+            [data-testid="stSidebar"] h3 {
+                color: #93c5fd !important;
             }
-            .dw-tag-ok, .dw-tag-mid, .dw-tag-risk {
-                display: inline-block;
-                margin-top: 0.45rem;
-                border-radius: 999px;
-                padding: 0.12rem 0.5rem;
-                font-size: 0.7rem;
-                font-weight: 700;
+            [data-testid="stSidebar"] button[kind="secondary"] {
+                border-color: #1d4ed8 !important;
+                background: rgba(15, 23, 42, 0.75) !important;
+                color: #cbd5e1 !important;
             }
-            .dw-tag-ok { background: #dcfce7; color: #166534; }
-            .dw-tag-mid { background: #fef3c7; color: #92400e; }
-            .dw-tag-risk { background: #fee2e2; color: #991b1b; }
+            [data-testid="stSidebar"] button[kind="secondary"]:hover {
+                border-color: #2563eb !important;
+                background: rgba(15, 39, 71, 0.9) !important;
+            }
+            [data-testid="stSidebar"] button[kind="primary"] {
+                background: linear-gradient(180deg, #1d4ed8, #0369a1) !important;
+                border: none !important;
+                color: #eff6ff !important;
+            }
+
+            .stButton > button[kind="primary"] {
+                background: linear-gradient(180deg, #1d4ed8, #0369a1);
+                border: none;
+                font-weight: 600;
+                border-radius: 8px;
+                min-height: 2.35rem;
+                color: #ffffff;
+            }
+            .stButton > button[kind="primary"]:hover {
+                background: linear-gradient(180deg, #2563eb, #0284c7);
+            }
+            .stButton > button[kind="secondary"] {
+                border-radius: 8px;
+                min-height: 2.35rem;
+                border: 1px solid #bfdbfe;
+                background: #ffffff;
+            }
+            .stButton > button:focus {
+                outline: none !important;
+                box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25) !important;
+            }
+
+            /* Dashed shell wraps uploader + Add files (see .dw-upload-shell-border) */
+            [data-testid="stFileUploader"] section {
+                border-radius: 10px;
+                border: none;
+                background: transparent;
+            }
+            [data-testid="stMetric"] {
+                border: 1px solid #bfdbfe;
+                border-radius: 10px;
+                background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+                padding: 0.35rem 0.55rem;
+                box-shadow: 0 4px 12px rgba(30, 41, 59, 0.06);
+            }
+
+            [data-testid="stDataFrame"] {
+                border: 1px solid #cbd5e1;
+                border-radius: 10px;
+                overflow: hidden;
+                box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+            }
+
+            [data-baseweb="tab-list"] {
+                gap: 0.2rem;
+                border-bottom: 1px solid #bfdbfe;
+                margin-bottom: 0.4rem;
+            }
+            [data-baseweb="tab"] {
+                height: 2rem;
+                border-radius: 8px 8px 0 0;
+                padding: 0 0.85rem;
+                font-weight: 600;
+                color: #334155;
+            }
+            [aria-selected="true"][data-baseweb="tab"] {
+                color: #0f2747 !important;
+                background: #e6f0ff;
+            }
+
+            [data-testid="stAlert"] {
+                border-radius: 10px;
+                border-width: 1px;
+            }
+
+            .stProgress > div > div > div > div {
+                background: linear-gradient(90deg, #1d4ed8, #0ea5e9);
+            }
+
+            /* Hide duplicate native Browse — file picking is via Add files → Browse files */
+            [data-testid="stFileUploader"] button[kind="secondary"] {
+                display: none !important;
+            }
 
             /* Schema inference — wireframe board (Mapper) */
             .dw-wf-board {
@@ -282,6 +295,7 @@ def _inject_styles() -> None:
                     0deg, #fafafa, #fafafa 10px, #f4f4f5 11px
                 ) !important;
             }
+
         </style>
         """,
         unsafe_allow_html=True,
@@ -301,46 +315,109 @@ def _hero(badge: str, title: str, subtitle: str) -> None:
     )
 
 
-def _pipeline_status_sidebar() -> None:
-    """Show 6-step pipeline with visual completion hints."""
-    has_upload = bool(st.session_state.get("uploaded_dfs"))
-    has_mapper = st.session_state.get("mapper_output") is not None
-    approved_1 = st.session_state.get("mapper_approved", False)
-    has_agg = st.session_state.get("aggregator_output") is not None
-    has_logs = bool(st.session_state.get("run_logs"))
-
-    steps = [
-        ("1", "Upload", has_upload),
-        ("2", "Mapper", has_mapper),
-        ("3", "HITL #1", approved_1),
-        ("4", "Aggregator", has_agg),
-        ("5", "HITL #2", has_logs and any(
-            isinstance(x, dict) and x.get("stage") == "HITL #2" for x in st.session_state.get("run_logs", [])
-        )),
-        ("6", "Exports", has_agg),
-    ]
-
-    lines = []
-    for num, label, done in steps:
-        icon = "✓" if done else "○"
-        color = "#4ade80" if done else "#64748b"
-        lines.append(
-            f'<div style="display:flex;align-items:center;gap:0.5rem;margin:0.35rem 0;font-size:0.82rem;">'
-            f'<span style="color:{color};font-weight:700;">{icon}</span>'
-            f'<span style="color:#cbd5e1;">{num}. {label}</span></div>'
-        )
-    st.sidebar.markdown(
-        '<p style="color:#94a3b8;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 0.5rem 0;">Pipeline</p>'
-        + "".join(lines),
-        unsafe_allow_html=True,
+def _trigger_native_file_picker() -> None:
+    components.html(
+        """
+        <script>
+        const doc = window.parent.document;
+        const box = doc.querySelector('[data-testid="stFileUploader"]');
+        const inp = box ? box.querySelector('input[type="file"]') : null;
+        if (inp) { inp.click(); }
+        </script>
+        """,
+        height=0,
+        width=0,
     )
 
 
-_inject_styles()
+# -----------------------------------------------------------------------------
+# Session state
+# -----------------------------------------------------------------------------
+if "page_idx" not in st.session_state:
+    st.session_state.page_idx = 0
+if "uploaded_dfs" not in st.session_state:
+    st.session_state.uploaded_dfs: Dict[str, pd.DataFrame] = {}
+if "source_mode" not in st.session_state:
+    st.session_state.source_mode = "Upload csv"
+if "trigger_csv_picker" not in st.session_state:
+    st.session_state.trigger_csv_picker = False
+if "upload_reset_id" not in st.session_state:
+    st.session_state.upload_reset_id = 0
+if "mapper_schema" not in st.session_state:
+    st.session_state.mapper_schema = {}
+if "mapper_source_sig" not in st.session_state:
+    st.session_state.mapper_source_sig = None
+if "data_dictionary" not in st.session_state:
+    st.session_state.data_dictionary: List[Dict] = []
+if "transformed_df" not in st.session_state:
+    st.session_state.transformed_df = None
+if "discarded_df" not in st.session_state:
+    st.session_state.discarded_df = None
+if "transform_source_sig" not in st.session_state:
+    st.session_state.transform_source_sig = None
+if "run_logs" not in st.session_state:
+    st.session_state.run_logs = []
+if "agent_dialogue" not in st.session_state:
+    st.session_state.agent_dialogue: Dict[str, str] = {
+        "Scout": "Waiting for connection...",
+        "Architect": "Waiting for connection...",
+        "Engineer": "Waiting for connection...",
+    }
 
+
+PAGES = ["Upload", "Mapper", "Transform", "Logs & Downloads"]
+
+
+# -----------------------------------------------------------------------------
 # Helpers
+# -----------------------------------------------------------------------------
+def go_next() -> None:
+    st.session_state.page_idx = min(st.session_state.page_idx + 1, len(PAGES) - 1)
+
+
+def go_back() -> None:
+    st.session_state.page_idx = max(st.session_state.page_idx - 1, 0)
+
+
+def go_to_page(idx: int) -> None:
+    st.session_state.page_idx = idx
+
+
+def _reset_mapper_outputs() -> None:
+    st.session_state.mapper_schema = {}
+    st.session_state.mapper_source_sig = None
+    st.session_state.data_dictionary = []
+    st.session_state.transformed_df = None
+    st.session_state.discarded_df = None
+    st.session_state.transform_source_sig = None
+
+
+def _reset_pipeline_session() -> None:
+    st.session_state.uploaded_dfs = {}
+    _reset_mapper_outputs()
+    st.session_state.run_logs = []
+    st.session_state.source_mode = "Upload csv"
+    st.session_state.trigger_csv_picker = False
+    st.session_state.agent_dialogue = {
+        "Scout": "Waiting for connection...",
+        "Architect": "Waiting for connection...",
+        "Engineer": "Waiting for connection...",
+    }
+    st.session_state.upload_reset_id = int(st.session_state.get("upload_reset_id", 0)) + 1
+
+
+def _format_session_csv_size(df: pd.DataFrame) -> str:
+    buf = io.StringIO()
+    df.to_csv(buf, index=False)
+    b = len(buf.getvalue().encode("utf-8"))
+    if b >= 1024 * 1024:
+        return f"{b / (1024 * 1024):.1f} MB"
+    if b >= 1024:
+        return f"{b / 1024:.1f} KB"
+    return f"{b} B"
+
+
 def _humanize_column_name(col: str) -> str:
-    """Replace pandas default index column labels (Unnamed: 0) in UI text."""
     s = str(col).strip()
     if "unnamed" in s.lower():
         return "row_index"
@@ -352,7 +429,6 @@ def _humanize_key_list(cols: List[str]) -> List[str]:
 
 
 def profile_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Basic profiling for each column."""
     profile = []
     for col in df.columns:
         series = df[col]
@@ -373,10 +449,6 @@ def profile_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 def _normalize_table_keys(
     df: pd.DataFrame, primary: List[str], foreign: List[str]
 ) -> Tuple[List[str], List[str]]:
-    """
-    One primary key per table (best-scoring). Other id-like PK candidates become FK candidates.
-    Keeps compound-PK cases only when both columns are required (rare in CSV); for MVP we prefer a single PK.
-    """
     primary = list(dict.fromkeys(primary))
     foreign = list(dict.fromkeys(foreign))
     foreign = [c for c in foreign if c not in primary]
@@ -410,9 +482,6 @@ def enrich_cross_table_foreign_keys(
     dfs: Dict[str, pd.DataFrame],
     schema_guess: Dict[str, Dict[str, List[str]]],
 ) -> Dict[str, Dict[str, List[str]]]:
-    """
-    If two+ tables share a column name that is PK in one table, mark that column as FK on other tables.
-    """
     out: Dict[str, Dict[str, List[str]]] = {
         k: {
             "primary_keys": list(v.get("primary_keys", [])),
@@ -453,7 +522,6 @@ def guess_keys(dfs: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, List[str]]]:
         parts = [p for p in re.split(r"[^a-z0-9]+", stem) if p]
         tokens = set(parts)
         for p in parts:
-            # simple singular forms
             if p.endswith("ies") and len(p) > 3:
                 tokens.add(p[:-3] + "y")
             elif p.endswith("s") and len(p) > 2:
@@ -467,7 +535,6 @@ def guess_keys(dfs: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, List[str]]]:
     for name, df in dfs.items():
         primary: List[str] = []
         foreign: List[str] = []
-        # Filename tokens + column-prefix tokens (e.g. final_dataset.csv + course_id/course_title → "course")
         tok = set(tokens_by_table[name])
         for col in df.columns:
             lc = col.lower().strip()
@@ -505,7 +572,6 @@ def guess_keys(dfs: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, List[str]]]:
         primary = list(dict.fromkeys(primary))
         foreign = [c for c in dict.fromkeys(foreign) if c not in primary]
 
-        # Still no PK: unique id-like / index columns (incl. pandas "Unnamed: 0" exports)
         if not primary and len(df) > 0:
 
             def _surrogate_name(col) -> bool:
@@ -526,7 +592,6 @@ def guess_keys(dfs: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, List[str]]]:
                         break
                 except Exception:
                     continue
-        # Any column that is unique per row (surrogate PK for wide tables without *_id)
         if not primary and len(df) > 0:
             for col in df.columns:
                 try:
@@ -545,9 +610,6 @@ def guess_keys(dfs: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, List[str]]]:
 
 
 def infer_relationships(schema_guess: Dict[str, Dict[str, List[str]]]) -> List[Tuple[str, str, str]]:
-    """
-    Infer simple relationships (parent_table, child_table, fk_column).
-    """
     def table_tokens(table_name: str) -> List[str]:
         stem = table_name.rsplit(".", 1)[0].lower()
         parts = [p for p in re.split(r"[^a-z0-9]+", stem) if p]
@@ -581,7 +643,6 @@ def infer_relationships(schema_guess: Dict[str, Dict[str, List[str]]]) -> List[T
                     relationships.append((parent_table, child_table, fk))
                     break
 
-    # De-duplicate
     return list(dict.fromkeys(relationships))
 
 
@@ -591,7 +652,6 @@ def infer_column_description(
     series: pd.Series,
     schema_guess: Dict[str, Dict[str, List[str]]],
 ) -> str:
-    """Human-readable description for data dictionary rows."""
     lc = col.lower().strip().replace(" ", "_")
     keys = schema_guess.get(table, {"primary_keys": [], "foreign_keys": []})
     pks = set(keys.get("primary_keys", []))
@@ -677,88 +737,14 @@ def _dtype_word(series: pd.Series) -> str:
     return "string"
 
 
-def generate_mermaid_erd(
-    schema_guess: Dict[str, Dict[str, List[str]]],
-    dfs: Optional[Dict[str, pd.DataFrame]] = None,
-) -> str:
-    """Mermaid ERD with real column names when dfs is provided."""
-    lines = ["erDiagram"]
-    dfs = dfs or {}
-    for table, keys in schema_guess.items():
-        safe = re.sub(r"[^a-zA-Z0-9_]", "_", table.rsplit(".", 1)[0])
-        lines.append(f"    {safe} {{")
-        df = dfs.get(table)
-        if df is not None:
-            for col in df.columns:
-                dt = _dtype_word(df[col])
-                disp = _humanize_column_name(str(col))
-                safe_col = re.sub(r"[^a-zA-Z0-9_]", "_", disp)
-                tag = ""
-                if col in keys["primary_keys"]:
-                    tag = " PK"
-                elif col in keys["foreign_keys"]:
-                    tag = " FK"
-                lines.append(f"        {dt} {safe_col}{tag}")
-        else:
-            for pk in keys["primary_keys"]:
-                lines.append(f"        string {pk} PK")
-            for fk in keys["foreign_keys"]:
-                lines.append(f"        string {fk} FK")
-            if not keys["primary_keys"] and not keys["foreign_keys"]:
-                lines.append("        string column")
-        lines.append("    }")
-
-    rels = infer_relationships(schema_guess)
-    for parent, child, fk in rels:
-        p = re.sub(r"[^a-zA-Z0-9_]", "_", parent.rsplit(".", 1)[0])
-        c = re.sub(r"[^a-zA-Z0-9_]", "_", child.rsplit(".", 1)[0])
-        lines.append(f'    {p} ||--o{{ {c} : "{fk}"')
-
-    return "\n".join(lines)
-
-
 def _erd_table_id(table_name: str) -> str:
     stem = table_name.rsplit(".", 1)[0]
     return "t_" + re.sub(r"[^a-zA-Z0-9]", "_", stem)
 
 
-def _erd_table_label(
-    table_name: str, df: pd.DataFrame, keys: Dict[str, List[str]]
-) -> str:
-    """Multiline label: filename, PK/FK summary, then real column names."""
-    pks = keys.get("primary_keys", [])
-    fks = keys.get("foreign_keys", [])
-    parts = [table_name, "────────"]
-    if pks:
-        parts.append("PK: " + ", ".join(_humanize_key_list(list(pks))))
-    if fks:
-        parts.append("FK: " + ", ".join(_humanize_key_list(list(fks))))
-    parts.append("")
-    cols = list(df.columns)
-    max_show = 14
-    for c in cols[:max_show]:
-        mark = ""
-        if c in pks:
-            mark = "  [PK]"
-        elif c in fks:
-            mark = "  [FK]"
-        dt = _dtype_word(df[c])
-        c_disp = _humanize_column_name(c)
-        parts.append(f"{c_disp} : {dt}{mark}")
-    if len(cols) > max_show:
-        parts.append(f"... +{len(cols) - max_show} more columns")
-    text = "\\n".join(parts)
-    return text.replace('"', '\\"')
-
-
 def _assign_columns_to_logical_entities(
     df: pd.DataFrame, keys: Dict[str, List[str]]
 ) -> List[Tuple[str, List[str]]]:
-    """
-    Split one wide table into logical ER groups — each becomes a box.
-    PK/FK columns go first into KEYS so they are not buried in "remaining".
-    Every column appears exactly once.
-    """
     cols = list(df.columns)
     pks = set(keys.get("primary_keys", []))
     fks = set(keys.get("foreign_keys", []))
@@ -776,7 +762,6 @@ def _assign_columns_to_logical_entities(
 
     groups: List[Tuple[str, List[str]]] = []
 
-    # Keys entity first (order: PK columns, then FK columns)
     key_ordered = [c for c in cols if c in pks] + [
         c for c in cols if c in fks and c not in pks
     ]
@@ -831,12 +816,10 @@ def _assign_columns_to_logical_entities(
         if got:
             groups.append((name, got))
 
-    # Anything left → MISC entity (guarantees all columns used)
     rest = [c for c in cols if c not in assigned]
     if rest:
         groups.append(("ENTITY · ATTRIBUTES (remaining)", rest))
 
-    # If still < 4 groups, split largest group
     while len(groups) < 4 and any(len(g[1]) > 2 for g in groups):
         for i, (nm, gcols) in enumerate(groups):
             if len(gcols) <= 2:
@@ -847,7 +830,6 @@ def _assign_columns_to_logical_entities(
             groups.insert(i + 1, (nm + " (b)", b))
             break
 
-    # Fallback: chunk into 4 parts
     if len(groups) < 2:
         groups = []
         chunk = max(1, (len(cols) + 3) // 4)
@@ -865,7 +847,6 @@ def _logical_entity_box_label(
     table_file: str,
     df: Optional[pd.DataFrame] = None,
 ) -> str:
-    """Richer box text: dtypes + optional null % — no extra entities, same groups."""
     pks = set(keys.get("primary_keys", []))
     fks = set(keys.get("foreign_keys", []))
     n = len(columns)
@@ -897,82 +878,10 @@ def _logical_entity_box_label(
     return text.replace('"', '\\"')
 
 
-def generate_physical_erd_dot(
-    dfs: Dict[str, pd.DataFrame],
-    schema_guess: Dict[str, Dict[str, List[str]]],
-) -> str:
-    """
-    Physical ERD: one box per uploaded table, every column listed with dtype and PK/FK role.
-    Relationship edges: child table → parent table (FK references PK).
-    """
-    if not dfs:
-        return 'digraph X { label="No datasets"; bgcolor="#f8fafc"; }'
-
-    rels = infer_relationships(schema_guess)
-    lines = [
-        "digraph PhysicalERD {",
-        "  compound=true;",
-        "  rankdir=LR;",
-        "  nodesep=0.55;",
-        "  ranksep=1.0;",
-        '  graph [fontname="Helvetica", fontsize=12, labelloc=t, label="Physical schema (wireframe) — tables & inferred PK/FK", bgcolor="#fafafa", pad=0.5, fontcolor="#334155"];',
-        '  splines=polyline;',
-        '  node [fontname="Helvetica", fontsize=8, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#64748b", penwidth=1.1];',
-        '  edge [fontname="Helvetica", fontsize=8, color="#2563eb", arrowsize=0.95, penwidth=1.15];',
-        "",
-    ]
-
-    max_cols = 48
-    for fname, df in dfs.items():
-        tid = _erd_table_id(fname)
-        keys = schema_guess.get(fname, {"primary_keys": [], "foreign_keys": []})
-        pks = set(keys.get("primary_keys", []))
-        fks = set(keys.get("foreign_keys", []))
-        safe_name = fname.replace('"', '\\"')
-        row_lines: List[str] = []
-        cols = list(df.columns)
-        for c in cols[:max_cols]:
-            dt = _dtype_word(df[c])
-            esc = _humanize_column_name(str(c)).replace('"', '\\"')
-            if c in pks:
-                row_lines.append(f"◆ {esc}   ({dt})   [PK]")
-            elif c in fks:
-                row_lines.append(f"◇ {esc}   ({dt})   [FK]")
-            else:
-                row_lines.append(f"· {esc}   ({dt})")
-        if len(cols) > max_cols:
-            row_lines.append(f"... +{len(cols) - max_cols} more columns")
-        body = "\\n".join(row_lines)
-        lbl = (
-            f"{safe_name}\\n{len(df):,} rows · {len(df.columns)} columns\\n"
-            f"────────\\n{body}"
-        )
-        lines.append(
-            f'  {tid} [label="{lbl}", margin=0.18, fillcolor="#f8fafc", penwidth=1.5];'
-        )
-
-    lines.append("")
-    # Child (has FK) → Parent (referenced PK)
-    for parent, child, fk in rels:
-        pid = _erd_table_id(parent)
-        cid = _erd_table_id(child)
-        fe = fk.replace('"', '\\"')
-        lines.append(
-            f'  {cid} -> {pid} [label="FK {fe}", arrowhead=vee, arrowsize=0.95, color="#1d4ed8", penwidth=1.25];'
-        )
-
-    lines.append("}")
-    return "\n".join(lines)
-
-
 def generate_dataset_erd_dot(
     dfs: Dict[str, pd.DataFrame],
     schema_guess: Dict[str, Dict[str, List[str]]],
 ) -> str:
-    """
-    **Layered ERD architecture** (reference-style): 4 horizontal bands, 9+ boxes,
-    dataset-driven column text — not a single flat entity.
-    """
     if not dfs:
         return 'digraph X { label="No datasets"; bgcolor="#f8fafc"; }'
 
@@ -980,7 +889,6 @@ def generate_dataset_erd_dot(
     total_rows = sum(len(df) for df in dfs.values())
     total_cols = sum(len(df.columns) for df in dfs.values())
 
-    # Primary table for logical decomposition (widest / first)
     main_name = max(dfs.keys(), key=lambda n: len(dfs[n].columns))
     main_df = dfs[main_name]
     main_keys = schema_guess.get(main_name, {"primary_keys": [], "foreign_keys": []})
@@ -1025,7 +933,6 @@ def generate_dataset_erd_dot(
         "",
     ]
 
-    # --- ① Entry — cluster (solid outer border)
     lines.extend(
         [
             '  subgraph cluster_entry {',
@@ -1044,7 +951,6 @@ def generate_dataset_erd_dot(
     lines.append("  }")
     lines.append("")
 
-    # --- ② Logical entities
     lines.extend(
         [
             '  subgraph cluster_entities {',
@@ -1065,7 +971,6 @@ def generate_dataset_erd_dot(
     lines.append("  }")
     lines.append("")
 
-    # --- ③ Shared keys
     lines.extend(
         [
             '  subgraph cluster_shared {',
@@ -1077,7 +982,6 @@ def generate_dataset_erd_dot(
         ]
     )
 
-    # --- ④ Artifacts / target
     art_rows = f"{total_rows:,}"
     lines.extend(
         [
@@ -1092,7 +996,6 @@ def generate_dataset_erd_dot(
         ]
     )
 
-    # Cross-table FK edges — solid lines
     for parent, child, fk in rels:
         pid = _erd_table_id(parent)
         cid = _erd_table_id(child)
@@ -1102,7 +1005,6 @@ def generate_dataset_erd_dot(
             f'constraint=false];'
         )
 
-    # Ingest → each logical entity
     for fname in dfs:
         tid = _erd_table_id(fname)
         for j in range(len(ent_ids)):
@@ -1110,13 +1012,11 @@ def generate_dataset_erd_dot(
                 f'  {tid} -> ent_{j} [label="columns", color="#64748b", penwidth=1.0];'
             )
 
-    # Entities → shared
     for j, eid in enumerate(ent_ids):
         lines.append(
             f'  {eid} -> shared_keys [label="infer keys", color="#7c3aed", penwidth=1.05];'
         )
 
-    # Shared → artifacts
     lines.extend(
         [
             '  shared_keys -> art_dict [label="feeds", color="#b45309", penwidth=1.1];',
@@ -1126,7 +1026,6 @@ def generate_dataset_erd_dot(
         ]
     )
 
-    # Optional: light link between logical entities (same grain) — chain
     for j in range(len(ent_ids) - 1):
         lines.append(
             f'  ent_{j} -> ent_{j + 1} [label="1:1 via row", color="#16a34a", '
@@ -1137,151 +1036,7 @@ def generate_dataset_erd_dot(
     return "\n".join(lines)
 
 
-def generate_langgraph_runtime_dot(
-    dfs: Dict[str, pd.DataFrame],
-    schema_guess: Dict[str, Dict[str, List[str]]],
-) -> str:
-    """Optional: code/runtime workflow (LangGraph) — separate from data ERD."""
-    rels = infer_relationships(schema_guess)
-    total_rows = sum(len(df) for df in dfs.values()) if dfs else 0
-    total_cols = sum(len(df.columns) for df in dfs.values()) if dfs else 0
-    n_files = len(dfs)
-
-    scout_extra = ""
-    if dfs:
-        nm = list(dfs.keys())[:2]
-        scout_extra = "\\n" + "\\n".join(nm)
-        if len(dfs) > 2:
-            scout_extra += "\\n…"
-    loader_extra = ""
-    if dfs:
-        loader_extra = f"\\nCurrent load scope: {total_rows:,} rows · {total_cols} cols · {n_files} file(s)"
-    arch_extra = ""
-    if schema_guess:
-        arch_extra = f"\\nSchema: {len(rels)} rel(s) inferred"
-
-    lines = [
-        "digraph ETLAgent {",
-        '  rankdir=TB;',
-        '  splines=spline;',
-        '  compound=true;',
-        '  graph [fontname="Helvetica", fontsize=11, labelloc=t, label="Runtime pipeline (code) — LangGraph + tools"];',
-        '  node [fontname="Helvetica", fontsize=10];',
-        '  edge [fontname="Helvetica", fontsize=9];',
-        "",
-        '  subgraph cluster_entry {',
-        '    label="Entry Point"; labelloc=t;',
-        '    style="rounded,filled"; fillcolor="#dbeafe"; color="#2563eb";',
-        '    script_py [label="script.py", shape=note, style=filled, fillcolor="#eff6ff"];',
-        '    main_py [label="main.py", shape=note, style=filled, fillcolor="#eff6ff"];',
-        "  }",
-        "",
-        '  run_pipeline [label="run_pipeline()", shape=cds, style="filled,rounded", fillcolor="#bae6fd"];',
-        "",
-        '  subgraph cluster_orch {',
-        '    label="Orchestration Layer"; labelloc=t;',
-        '    style="rounded,filled"; fillcolor="#dcfce7"; color="#16a34a";',
-        '    langgraph [label="LangGraph Pipeline\\ngraph.py · build_graph()", shape=box, style="filled,rounded", fillcolor="#ffffff"];',
-        f'    scout [label="Scout Node{scout_extra}", shape=box, style="filled,rounded", fillcolor="#e5e7eb"];',
-        f'    architect [label="Architect Node{arch_extra}", shape=box, style="filled,rounded", fillcolor="#e5e7eb"];',
-        '    engineer [label="Engineer Node\\n_extract_code() / exec()", shape=box, style="filled,rounded", fillcolor="#e5e7eb"];',
-        f'    loader [label="Loader Node{loader_extra}", shape=box, style="filled,rounded", fillcolor="#e5e7eb"];',
-        '    router [label="Conditional Edge\\nrouter.py", shape=diamond, style="filled,rounded", fillcolor="#fef9c3"];',
-        "  }",
-        "",
-        '  shared_state [label="Shared State\\netl_state.py", shape=box, style="filled,rounded", fillcolor="#c4b5fd", color="#6d28d9", penwidth=2];',
-        "",
-        '  subgraph cluster_impl {',
-        '    label="Implementation & Utility Layer"; labelloc=t;',
-        '    style="rounded,filled"; fillcolor="#fef9c7"; color="#ca8a04";',
-        '    csv_tools [label="tools/csv_tools.py\\nread_csv() · infer_schema()", shape=box, style="filled,rounded", fillcolor="#ffffff"];',
-        '    pandas_lib [label="pandas", shape=box, style="filled,rounded", fillcolor="#fff7ed"];',
-        '    api_tools [label="tools/api_tools.py", shape=box, style="filled,rounded", fillcolor="#ffffff"];',
-        '    requests_lib [label="requests", shape=box, style="filled,rounded", fillcolor="#fff7ed"];',
-        '    ollama_client [label="langchain-ollama\\nChatOllama client", shape=box, style="filled,rounded", fillcolor="#ffffff"];',
-        '    ollama_srv [label="Ollama Server\\nqwen2.5:14b", shape=box, style="filled,rounded", fillcolor="#e0f2fe"];',
-        '    sqlalchemy_lib [label="sqlalchemy", shape=box, style="filled,rounded", fillcolor="#fff7ed"];',
-        '    target [label="Target (File / DB)", shape=box, style="filled,rounded", fillcolor="#ecfdf5"];',
-        "  }",
-        "",
-        "  { rank=same; script_py; main_py; }",
-        "  script_py -> main_py [style=invis];",
-        '  main_py -> run_pipeline [label="calls run_pipeline()", color="#334155"];',
-        '  run_pipeline -> langgraph [label="invoke", color="#334155"];',
-        "",
-        '  langgraph -> scout [label="calls *_node(state)", color="#334155"];',
-        "  scout -> architect [color=\"#334155\"];",
-        "  architect -> engineer [color=\"#334155\"];",
-        '  engineer -> loader [label="pass", color="#16a34a", penwidth=1.5];',
-        '  loader -> router [label="escalate", color="#334155"];',
-        '  router -> loader [label="retry", color="#2563eb"];',
-        '  router -> engineer [label="generates bad code", color=red, fontcolor=red];',
-        "",
-        '  scout -> shared_state [style=dashed, color="#6d28d9", label="reads/writes"];',
-        '  architect -> shared_state [style=dashed, color="#6d28d9", label="reads/writes"];',
-        '  engineer -> shared_state [style=dashed, color="#6d28d9", label="reads/writes"];',
-        '  loader -> shared_state [style=dashed, color="#6d28d9", label="reads/writes"];',
-        "",
-        '  scout -> csv_tools [label="uses", color="#64748b"];',
-        "  csv_tools -> pandas_lib [color=\"#64748b\"];",
-        '  scout -> api_tools [label="uses", color="#64748b"];',
-        "  api_tools -> requests_lib [color=\"#64748b\"];",
-        "",
-        '  engineer -> ollama_client [label="prompts / code", color="#64748b"];',
-        "  ollama_client -> ollama_srv [color=\"#64748b\"];",
-        "",
-        '  loader -> sqlalchemy_lib [label="writes via", color="#64748b"];',
-        '  loader -> target [label="writes data", color="#059669", penwidth=1.8];',
-        '  sqlalchemy_lib -> target [color="#64748b"];',
-        "}",
-    ]
-    return "\n".join(lines)
-
-
-def run_naive_aggregator(
-    dfs: Dict[str, pd.DataFrame],
-) -> Tuple[pd.DataFrame, Dict]:
-    if not dfs:
-        return pd.DataFrame(), {}
-
-    items = list(dfs.items())
-    _, base_df = items[0]
-    joined = base_df.copy()
-    source_rows = len(joined)
-
-    for name, df in items[1:]:
-        common_cols = list(set(joined.columns) & set(df.columns))
-        key_candidates = [
-            c for c in common_cols if c.lower() == "id" or c.lower().endswith("_id")
-        ]
-        if not key_candidates:
-            continue
-        key = key_candidates[0]
-        joined = joined.merge(df, on=key, how="left", suffixes=("", f"_{name}"))
-
-    final_rows = len(joined)
-    product_rows = 1
-    for _, df in dfs.items():
-        product_rows *= max(1, len(df))
-
-    invariant_ok = final_rows <= product_rows
-
-    return joined, {
-        "R_final": final_rows,
-        "R_product_sources": product_rows,
-        "invariant_ok": invariant_ok,
-        "source_rows_first_table": source_rows,
-    }
-
-
-def to_csv_download(df: pd.DataFrame) -> bytes:
-    buf = io.StringIO()
-    df.to_csv(buf, index=False)
-    return buf.getvalue().encode("utf-8")
-
-
 def _quality_tag(df: pd.DataFrame) -> str:
-    """Simple quality indicator based on missing values."""
     if df.empty:
         return "Needs review"
     null_ratio = float(df.isna().sum().sum()) / float(max(1, df.shape[0] * max(1, df.shape[1])))
@@ -1292,164 +1047,7 @@ def _quality_tag(df: pd.DataFrame) -> str:
     return "Needs review"
 
 
-def render_schema_pipeline_layout(dfs: Dict[str, pd.DataFrame]) -> None:
-    if not dfs:
-        st.info("Upload datasets first to preview pipeline layout.")
-        return
-
-    source_names = list(dfs.keys())
-    total_rows = sum(len(df) for df in dfs.values())
-    total_cols = sum(len(df.columns) for df in dfs.values())
-    schema_guess = guess_keys(dfs)
-
-    # Build dataset-specific text for the pipeline cards
-    first_table = source_names[0] if source_names else "source_table"
-    first_cols = list(dfs[first_table].columns[:4]) if source_names else []
-    first_cols_txt = ", ".join(first_cols) if first_cols else "n/a"
-    pk_all: List[str] = []
-    fk_all: List[str] = []
-    for t in schema_guess.values():
-        pk_all.extend(t.get("primary_keys", []))
-        fk_all.extend(t.get("foreign_keys", []))
-    pk_unique = list(dict.fromkeys(pk_all))
-    fk_unique = list(dict.fromkeys(fk_all))
-    pk_txt = ", ".join(_humanize_key_list(pk_unique[:3])) if pk_unique else "none detected yet"
-    fk_txt = ", ".join(_humanize_key_list(fk_unique[:3])) if fk_unique else "none detected yet"
-    relationships = infer_relationships(schema_guess)
-
-    def source_payload(idx: int):
-        if idx < len(source_names):
-            name = source_names[idx]
-            df = dfs[name]
-            q = _quality_tag(df)
-            return {
-                "name": name,
-                "rows": f"{len(df):,}",
-                "cols": f"{len(df.columns)}",
-                "status": q,
-                "risk": "ok" if q == "Ready" else ("warn" if q == "Watch" else "risk"),
-            }
-        return {
-            "name": "optional source",
-            "rows": "—",
-            "cols": "—",
-            "status": "Pending",
-            "risk": "warn",
-        }
-
-    s1 = source_payload(0)
-    s2 = source_payload(1)
-
-    html = f"""
-    <style>
-      .dw-wrap {{
-        background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;position:relative;
-        font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;
-      }}
-      .lane {{
-        border-radius:10px;
-        border:1px solid #dbeafe;
-        background:#eff6ff;
-        padding:10px;
-        margin-bottom:10px;
-      }}
-      .lane.t {{ border-color:#fde68a; background:#fffbeb; }}
-      .lane.l {{ border-color:#bbf7d0; background:#f0fdf4; }}
-      .lane-title {{
-        font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#334155;font-weight:800;margin-bottom:8px;
-      }}
-      .row {{
-        display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-      }}
-      .node {{
-        background:#fff;border:1px solid #d1d5db;border-radius:10px;padding:10px 12px;
-        box-shadow:0 1px 5px rgba(15,23,42,.05);position:relative; min-width:230px;
-      }}
-      .node.extract {{ border-left:4px solid #2563eb; }}
-      .node.transform {{ border-left:4px solid #d97706; }}
-      .node.load {{ border-left:4px solid #16a34a; }}
-      .kicker {{ font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:700; }}
-      .title {{ margin-top:2px;font-size:16px;font-weight:700;line-height:1.2; }}
-      .meta {{ margin-top:8px;font-size:13px;color:#475569; }}
-      .pill {{ margin-top:8px;display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700; }}
-      .pill.ok {{ color:#047857;background:#d1fae5;border:1px solid #a7f3d0; }}
-      .pill.warn {{ color:#a16207;background:#fef9c3;border:1px solid #fde68a; }}
-      .pill.risk {{ color:#b91c1c;background:#fee2e2;border:1px solid #fecaca; }}
-      .arrow {{
-        width:26px;height:2px;background:#94a3b8;position:relative;display:inline-block;
-      }}
-      .arrow:after {{
-        content:""; position:absolute; right:-1px; top:-4px;
-        border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:7px solid #64748b;
-      }}
-    </style>
-    <div class="dw-wrap">
-      <div class="lane">
-        <div class="lane-title">Extract stage</div>
-        <div class="row">
-          <div class="node extract">
-            <div class="kicker">SOURCE</div>
-            <div class="title">{s1["name"]}</div>
-            <div class="meta">{s1["rows"]} rows · {s1["cols"]} cols</div>
-            <span class="pill {s1["risk"]}">{s1["status"]}</span>
-          </div>
-          <span class="arrow"></span>
-          <div class="node extract">
-            <div class="kicker">SOURCE</div>
-            <div class="title">{s2["name"]}</div>
-            <div class="meta">{s2["rows"]} rows · {s2["cols"]} cols</div>
-            <span class="pill {s2["risk"]}">{s2["status"]}</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="lane t">
-        <div class="lane-title">Transform stage</div>
-        <div class="row">
-          <div class="node transform">
-            <div class="kicker">AGENT</div>
-            <div class="title">Schema Inference</div>
-            <div class="meta">Detected PKs: {pk_txt}</div>
-            <div class="meta">Detected FKs: {fk_txt}</div>
-            <span class="pill ok">Inferred</span>
-          </div>
-          <span class="arrow"></span>
-          <div class="node transform">
-            <div class="kicker">MAPPING</div>
-            <div class="title">Canonical Mapping</div>
-            <div class="meta">Normalize columns for {first_table}</div>
-            <div class="meta">Example fields: {first_cols_txt}</div>
-            <span class="pill warn">Awaiting run</span>
-          </div>
-          <span class="arrow"></span>
-          <div class="node transform">
-            <div class="kicker">HITL</div>
-            <div class="title">Validation Gate</div>
-            <div class="meta">Review key mapping, nulls, and join safety</div>
-            <span class="pill warn">Manual approval</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="lane l">
-        <div class="lane-title">Load stage</div>
-        <div class="row">
-          <div class="node load">
-            <div class="kicker">ARTIFACTS</div>
-            <div class="title">Schema Outputs</div>
-            <div class="meta">ERD edges inferred: {len(relationships)}</div>
-            <div class="meta">Data dictionary for {total_cols} fields · {total_rows:,} rows referenced</div>
-            <span class="pill warn">Ready for export</span>
-          </div>
-        </div>
-      </div>
-    </div>
-    """
-    components.html(html, height=520, scrolling=False)
-
-
 def planned_transforms_named(df: pd.DataFrame) -> List[str]:
-    """Concrete transform steps using actual column names from this table."""
     cols = list(df.columns)
     steps: List[str] = []
     date_cols = [
@@ -1480,7 +1078,6 @@ def planned_transforms_named(df: pd.DataFrame) -> List[str]:
 
 
 def _html_strip_md_bold(s: str) -> str:
-    """Strip **bold** for plain HTML text."""
     return re.sub(r"\*\*(.+?)\*\*", r"\1", s)
 
 
@@ -1488,7 +1085,6 @@ def render_schema_pipeline_layout_v2(
     dfs: Dict[str, pd.DataFrame],
     schema_guess: Optional[Dict[str, Dict[str, List[str]]]] = None,
 ) -> None:
-    """Schema inference pipeline — wireframe UI: columns, keys, joins (ETL lanes)."""
     if not dfs:
         st.info("Upload datasets first to preview pipeline layout.")
         return
@@ -1510,7 +1106,6 @@ def render_schema_pipeline_layout_v2(
 
     h = html.escape
 
-    # Metrics strip (wireframe blueprint)
     st.markdown(
         f"""
 <div class="dw-wf-board">
@@ -1527,7 +1122,6 @@ def render_schema_pipeline_layout_v2(
 
     lane_e, lane_t, lane_l = st.columns([1, 1.15, 1])
 
-    # --- EXTRACT lane ---
     extract_cards: List[str] = []
     for name in source_names[:3]:
         df = dfs[name]
@@ -1557,7 +1151,6 @@ def render_schema_pipeline_layout_v2(
         )
         st.markdown("".join(extract_cards), unsafe_allow_html=True)
 
-    # --- TRANSFORM lane ---
     first_table = source_names[0]
     first_df = dfs[first_table]
     inf_rows: List[str] = []
@@ -1602,8 +1195,8 @@ def render_schema_pipeline_layout_v2(
 <div class="dw-wf-card">
   <div class="dw-wf-card-title">HITL gate</div>
   <div class="dw-wf-keys">PK <code>{h(pk_hint)}</code> · FK <code>{h(fk_hint)}</code></div>
-  <div class="dw-wf-meta">Confirm in Step 3 · HITL #1 before Aggregator.</div>
-  <span class="dw-wf-pill dw-wf-pill-ok">Ready for review → Step 3</span>
+  <div class="dw-wf-meta">Confirm in <strong>Transform</strong> (step 3) before running guided transforms.</div>
+  <span class="dw-wf-pill dw-wf-pill-ok">Ready for review → Transform</span>
 </div>
 """
     with lane_t:
@@ -1613,7 +1206,6 @@ def render_schema_pipeline_layout_v2(
         )
         st.markdown(transform_html, unsafe_allow_html=True)
 
-    # --- LOAD lane ---
     names_short = ", ".join(source_names[:3])
     if len(source_names) > 3:
         names_short += " …"
@@ -1634,230 +1226,347 @@ def render_schema_pipeline_layout_v2(
         st.markdown(load_html, unsafe_allow_html=True)
 
 
-# Sidebar
-st.sidebar.markdown(
-    "### 🧵 DataWeaver",
-    unsafe_allow_html=True,
-)
-st.sidebar.caption("Distributed agentic pipeline · Sprint 0")
-st.sidebar.caption(f"Build: {APP_BUILD}")
+def make_data_dictionary(dfs: Dict[str, pd.DataFrame], schema: Dict[str, Dict[str, List[str]]]) -> List[Dict]:
+    rows: List[Dict] = []
+    for table, df in dfs.items():
+        keys = schema.get(table, {"primary_keys": [], "foreign_keys": []})
+        for col in df.columns:
+            role = "attribute"
+            if col in keys["primary_keys"]:
+                role = "primary_key"
+            elif col in keys["foreign_keys"]:
+                role = "foreign_key"
+            rows.append(
+                {
+                    "table": table,
+                    "column": col,
+                    "dtype": str(df[col].dtype),
+                    "role": role,
+                    "null_pct": round(df[col].isna().mean() * 100, 2),
+                    "description": infer_column_description(table, str(col), df[col], schema),
+                }
+            )
+    return rows
 
-page = st.sidebar.radio(
-    "Navigate",
-    [
-        "1 · Upload & Profiling",
-        "2 · Mapper (Architect)",
-        "3 · HITL Checkpoint #1",
-        "4 · Aggregator (Engineer)",
-        "5 · HITL Checkpoint #2",
-        "6 · Logs & Downloads",
-    ],
-    label_visibility="collapsed",
-)
+
+def run_transform(dfs: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+    if not dfs:
+        return pd.DataFrame()
+    items = list(dfs.items())
+    base = items[0][1].copy()
+    for _, df in items[1:]:
+        common = list(set(base.columns) & set(df.columns))
+        keys = [c for c in common if str(c).lower() == "id" or str(c).lower().endswith("_id")]
+        if keys:
+            base = base.merge(df, on=keys[0], how="left", suffixes=("", "_r"))
+    return base
+
+
+def _update_agent_dialogue(connected: bool) -> None:
+    if connected:
+        for agent in ("Scout", "Architect", "Engineer"):
+            st.session_state.agent_dialogue.setdefault(agent, "Connected. Waiting for live message...")
+    else:
+        st.session_state.agent_dialogue = {
+            "Scout": "Waiting for connection...",
+            "Architect": "Waiting for connection...",
+            "Engineer": "Waiting for connection...",
+        }
+
+
+def render_agent_dialogue_box(connected: bool) -> None:
+    _update_agent_dialogue(connected)
+    st.markdown("**Agent dialogue**")
+    st.caption("Live status feed from agents (updates when backend is connected).")
+    dialogue_text = "\n\n".join(
+        [f"{agent}: {msg}" for agent, msg in st.session_state.agent_dialogue.items()]
+    )
+    st.text_area(
+        "Agent messages",
+        value=dialogue_text,
+        height=180,
+        disabled=True,
+        key="agent_dialogue_textarea",
+    )
+
+
+def to_csv_bytes(df: pd.DataFrame) -> bytes:
+    buf = io.StringIO()
+    df.to_csv(buf, index=False)
+    return buf.getvalue().encode("utf-8")
+
+# -----------------------------------------------------------------------------
+# Header + stepper
+# -----------------------------------------------------------------------------
+_inject_styles()
+
+st.sidebar.title("Navigation")
+for idx, page_name in enumerate(PAGES):
+    label = f"{idx + 1}. {page_name}"
+    st.sidebar.button(
+        label,
+        key=f"sidebar_step_{idx}",
+        on_click=go_to_page,
+        args=(idx,),
+        use_container_width=True,
+        type="primary" if st.session_state.page_idx == idx else "secondary",
+    )
 
 st.sidebar.markdown("---")
-_pipeline_status_sidebar()
-st.sidebar.markdown("---")
-st.sidebar.markdown(
-    '<span style="color:#64748b;font-size:0.8rem;">Prototype · LangGraph + invariants</span>',
+st.sidebar.caption(f"Current step: {st.session_state.page_idx + 1} / {len(PAGES)}")
+
+current = PAGES[st.session_state.page_idx]
+
+st.markdown(
+    """
+    <div class="dw-topbar">
+        <div class="dw-topbar-text">DATA WEAVE</div>
+    </div>
+    """,
     unsafe_allow_html=True,
 )
 
-# Session State
-if "uploaded_dfs" not in st.session_state:
-    st.session_state.uploaded_dfs: Dict[str, pd.DataFrame] = {}
 
-if "mapper_output" not in st.session_state:
-    st.session_state.mapper_output = None
+# -----------------------------------------------------------------------------
+# Page 1: Upload / dashboard
+# -----------------------------------------------------------------------------
+if current == "Upload":
+    _hero("Step 1", "Upload", "Upload csv, URL API, or Google Drive source")
+    mc1, mc2, mc3 = st.columns(3)
+    with mc1:
+        st.metric("Sources in session", len(st.session_state.uploaded_dfs))
+    with mc2:
+        total_rows = sum(len(df) for df in st.session_state.uploaded_dfs.values()) if st.session_state.uploaded_dfs else 0
+        st.metric("Rows available", f"{total_rows:,}")
+    with mc3:
+        st.metric("Pipeline step", "Ingest")
 
-if "mapper_approved" not in st.session_state:
-    st.session_state.mapper_approved = False
+    mode = st.session_state.source_mode
 
-if "aggregator_output" not in st.session_state:
-    st.session_state.aggregator_output = None
+    def _add_files_menu() -> None:
+        with st.popover("Add files", use_container_width=False):
+            st.caption("Select how to add data")
+            if st.button("Browse files", key="add_menu_browse", use_container_width=True):
+                st.session_state.source_mode = "Upload csv"
+                st.session_state.trigger_csv_picker = True
+                st.rerun()
+            if st.button("Upload url api", key="add_menu_api", use_container_width=True):
+                st.session_state.source_mode = "Upload url api"
+                st.rerun()
+            if st.button("Connect google drive", key="add_menu_drive", use_container_width=True):
+                st.session_state.source_mode = "Connect google drive"
+                st.rerun()
 
-if "aggregator_report" not in st.session_state:
-    st.session_state.aggregator_report = None
-
-if "run_logs" not in st.session_state:
-    st.session_state.run_logs = []
-
-if "upload_reset_id" not in st.session_state:
-    st.session_state.upload_reset_id = 0
-
-def _reset_pipeline_session() -> None:
-    """Clear data + mapper/ERD/schema outputs so metrics and step 2+ start fresh."""
-    st.session_state.uploaded_dfs = {}
-    st.session_state.mapper_output = None
-    st.session_state.mapper_approved = False
-    st.session_state.aggregator_output = None
-    st.session_state.aggregator_report = None
-    st.session_state.run_logs = []
-    st.session_state.upload_reset_id = int(st.session_state.get("upload_reset_id", 0)) + 1
-
-
-# 1. Upload & Profiling
-if page == "1 · Upload & Profiling":
-    _hero(
-        "Step 1 · Ingest",
-        "Upload & profiling",
-        "Load fragmented CSVs from legacy systems. Profiling is the cataloging step before the Mapper runs.",
+    st.markdown(
+        """
+        <style>
+        section[data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] {
+            border: 2px dotted #60a5fa !important;
+            border-style: dotted !important;
+            border-radius: 10px !important;
+            background: #f8fafc !important;
+            padding: 0.55rem 0.6rem 0.75rem !important;
+            margin-bottom: 0.35rem !important;
+            box-shadow: none !important;
+        }
+        section[data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"]:nth-child(1),
+        section[data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] > div[data-testid="column"]:first-child {
+            background: linear-gradient(180deg, #dbeafe 0%, #bfdbfe 42%, #e0f2fe 100%) !important;
+            border-radius: 8px !important;
+            padding: 0.5rem 0.65rem 0.6rem !important;
+            margin: 0.1rem 0.15rem 0.1rem 0.1rem !important;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65) !important;
+        }
+        section[data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"]:nth-child(2),
+        section[data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] > div[data-testid="column"]:last-child {
+            background: #ffffff !important;
+            border-radius: 8px !important;
+            padding: 0.35rem 0.4rem !important;
+            margin: 0.1rem 0.1rem 0.1rem 0 !important;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06) !important;
+            align-self: flex-start !important;
+        }
+        section[data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stFileUploader"] section {
+            background: transparent !important;
+        }
+        section[data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] .stTextInput input {
+            border-radius: 10px !important;
+            border: 1px solid #e2e8f0 !important;
+            background: #f8fafc !important;
+            padding: 0.55rem 0.65rem !important;
+        }
+        section[data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] .stTextInput label p {
+            font-size: 0.72rem !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.04em !important;
+            color: #64748b !important;
+            text-transform: uppercase;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
 
-    c1, c2, c3 = st.columns(3)
-    n_files = len(st.session_state.uploaded_dfs)
-    total_rows = (
-        sum(len(df) for df in st.session_state.uploaded_dfs.values()) if n_files else 0
-    )
-    with c1:
-        st.metric("Files loaded", n_files)
-    with c2:
-        st.metric("Total rows (all files)", f"{total_rows:,}")
-    with c3:
-        st.metric("Pipeline stage", "Profiling" if n_files else "Waiting for data")
+    files = None
+    with st.container(border=True):
+        row = st.columns([4, 1])
+        with row[0]:
+            if mode == "Upload csv":
+                st.caption("Select CSV file(s) from this device")
+                files = st.file_uploader(
+                    "csv_upload",
+                    type=["csv"],
+                    accept_multiple_files=True,
+                    label_visibility="collapsed",
+                    key=f"dw_csv_uploader_{st.session_state.upload_reset_id}",
+                )
+                if st.session_state.uploaded_dfs and not files:
+                    st.markdown("---")
+                    st.markdown("**Files in session**")
+                    for fname, df in st.session_state.uploaded_dfs.items():
+                        sz = _format_session_csv_size(df)
+                        st.markdown(f"- 📄 `{fname}` · **{sz}** · {len(df):,} rows")
+            elif mode == "Upload url api":
+                st.caption("Paste your API endpoint URL")
+                st.text_input(
+                    "API URL",
+                    key="upload_api_url_field",
+                    placeholder="https://api.example.com/data",
+                )
+            else:
+                st.caption("Paste a Google Drive file or folder link")
+                st.text_input(
+                    "Google Drive file/folder link",
+                    key="upload_drive_link_field",
+                    placeholder="https://drive.google.com/file/d/...",
+                )
+                st.link_button("Open Google Drive", "https://drive.google.com/", use_container_width=True)
+        with row[1]:
+            st.markdown("<br/>", unsafe_allow_html=True)
+            _add_files_menu()
+        if mode == "Upload url api":
+            if st.button("Submit API URL", key="upload_submit_api", use_container_width=True):
+                _reset_mapper_outputs()
+                st.session_state.run_logs = []
+                st.session_state.uploaded_dfs = {
+                    "api_data.csv": pd.DataFrame({"id": [1, 2], "value": [100, 200]})
+                }
+        elif mode == "Connect google drive":
+            if st.button("Use Google Drive link", key="upload_submit_drive", use_container_width=True):
+                _reset_mapper_outputs()
+                st.session_state.run_logs = []
+                st.session_state.uploaded_dfs = {
+                    "drive_data.csv": pd.DataFrame({"id": [1, 2], "name": ["A", "B"]})
+                }
 
-    st.markdown('<div class="dw-card">', unsafe_allow_html=True)
-    st.markdown("**Ingest CSVs**")
-    uploaded_files = st.file_uploader(
-        "Select CSV file(s) from this device",
-        type=["csv"],
-        accept_multiple_files=True,
-        key=f"dw_csv_uploader_{st.session_state.upload_reset_id}",
-        help="Multiple CSVs supported — each becomes a table for mapping and joins. "
-        "Session data persists across steps until you clear or replace it.",
-        label_visibility="visible",
-    )
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if uploaded_files:
-        st.session_state.uploaded_dfs = {}
-        for f in uploaded_files:
-            df = pd.read_csv(f)
-            st.session_state.uploaded_dfs[f.name] = df
-        st.session_state.mapper_output = None
-        st.session_state.mapper_approved = False
-        st.session_state.aggregator_output = None
-        st.session_state.aggregator_report = None
-        st.session_state.run_logs = []
+    if mode == "Upload csv":
+        if st.session_state.trigger_csv_picker:
+            _trigger_native_file_picker()
+            st.session_state.trigger_csv_picker = False
+        if files:
+            _reset_mapper_outputs()
+            st.session_state.run_logs = []
+            st.session_state.uploaded_dfs = {}
+            for f in files:
+                st.session_state.uploaded_dfs[f.name] = pd.read_csv(f)
 
     if st.session_state.uploaded_dfs:
+        n = len(st.session_state.uploaded_dfs)
         st.success(
-            f"**{len(st.session_state.uploaded_dfs)}** file(s) in session — "
-            "kept while you use steps 2–6. Upload again to **replace**; use **Clear** below to remove."
+            f"**{n}** file(s) in session — kept while you use steps 2–4. "
+            "Upload again to **replace**; use **Clear** below to remove."
         )
-
         c_clear, _ = st.columns([1, 3])
         with c_clear:
             if st.button("🗑 Clear uploaded data & reset pipeline", type="secondary"):
                 _reset_pipeline_session()
                 st.rerun()
+        st.caption("Data source is ready. Click **Next** to continue to Mapper.")
 
-        for name, df in st.session_state.uploaded_dfs.items():
-            st.markdown(f"#### 📄 {name}")
-            t1, t2 = st.tabs(["Preview", "Column profiling"])
-            with t1:
-                st.dataframe(df.head(10), use_container_width=True, height=280)
-            with t2:
-                profile = profile_dataframe(df)
-                st.dataframe(profile, use_container_width=True, height=320)
+    c1, c2, _ = st.columns([1, 1, 6])
+    with c1:
+        st.button("Back", disabled=True)
+    with c2:
+        st.button("Next", on_click=go_next, type="primary")
 
-        st.info("Next: open **2 · Mapper (Architect)** to infer schema and ERD.")
 
-# 2. Mapper (Architect) View
-elif page == "2 · Mapper (Architect)":
-    _hero(
-        "Step 2 · Architect agent",
-        "Mapper — schema & ERD",
-        "Infers keys, relationships, and a data dictionary. Mock output until your LangGraph agent is wired in.",
-    )
+# -----------------------------------------------------------------------------
+# Page 2: Mapper
+# -----------------------------------------------------------------------------
+elif current == "Mapper":
+    _hero("Step 2", "Mapper", "Preview, schema inference, ERD, and data dictionary")
 
     if not st.session_state.uploaded_dfs:
-        st.warning("No CSVs yet. Complete **1 · Upload & Profiling** first.")
+        st.warning("No uploaded data found. Go back to Upload page.")
     else:
-        col_a, col_b = st.columns([1, 1])
-        with col_a:
-            if st.button("▶ Run Mapper (mock)", type="primary", use_container_width=True):
-                schema_guess = guess_keys(st.session_state.uploaded_dfs)
-                schema_guess = enrich_cross_table_foreign_keys(
-                    st.session_state.uploaded_dfs, schema_guess
-                )
-                mermaid_erd = generate_mermaid_erd(
-                    schema_guess, st.session_state.uploaded_dfs
-                )
-                data_dict = []
-                for name, df in st.session_state.uploaded_dfs.items():
-                    for col in df.columns:
-                        data_dict.append(
-                            {
-                                "table": name,
-                                "column": col,
-                                "dtype": str(df[col].dtype),
-                                "description": infer_column_description(
-                                    name, col, df[col], schema_guess
-                                ),
-                            }
-                        )
-                st.session_state.mapper_output = {
-                    "schema_guess": schema_guess,
-                    "mermaid_erd": mermaid_erd,
-                    "data_dictionary": data_dict,
-                }
-                st.session_state.mapper_approved = False
-                st.rerun()
+        mk1, mk2, mk3 = st.columns(3)
+        with mk1:
+            st.metric("Tables", len(st.session_state.uploaded_dfs))
+        with mk2:
+            st.metric("Total fields", sum(len(df.columns) for df in st.session_state.uploaded_dfs.values()))
+        with mk3:
+            st.metric("Step status", "Auto-mapped")
 
-        if st.session_state.mapper_output:
-            out = st.session_state.mapper_output
-            tab_schema, tab_erd, tab_dd = st.tabs(
-                ["Schema inference", "ERD (wireframe)", "Data dictionary"]
-            )
-            with tab_schema:
+        source_sig = tuple(
+            sorted((name, len(df), len(df.columns)) for name, df in st.session_state.uploaded_dfs.items())
+        )
+        if st.session_state.mapper_source_sig != source_sig:
+            schema_guess = guess_keys(st.session_state.uploaded_dfs)
+            schema = enrich_cross_table_foreign_keys(st.session_state.uploaded_dfs, schema_guess)
+            st.session_state.mapper_schema = schema
+            st.session_state.data_dictionary = make_data_dictionary(st.session_state.uploaded_dfs, schema)
+            st.session_state.mapper_source_sig = source_sig
+            st.session_state.run_logs.append({"stage": "Mapper", "status": "completed"})
+
+        t1, t2, t3, t4, t5 = st.tabs(
+            ["Preview", "Column profiling", "Schema inference", "ERD", "DATA DICTIONARY"]
+        )
+
+        with t1:
+            for name, df in st.session_state.uploaded_dfs.items():
+                st.markdown(f"### 📄 {name}")
+                st.dataframe(df.head(10), use_container_width=True, height=300)
+        with t2:
+            for name, df in st.session_state.uploaded_dfs.items():
+                st.markdown(f"### 📄 {name}")
+                st.dataframe(profile_dataframe(df), use_container_width=True, height=340)
+        with t3:
+            if st.session_state.mapper_schema:
                 render_schema_pipeline_layout_v2(
                     st.session_state.uploaded_dfs,
-                    out["schema_guess"],
+                    st.session_state.mapper_schema,
                 )
-            with tab_erd:
+                with st.expander("Raw schema JSON", expanded=False):
+                    st.json(st.session_state.mapper_schema)
+                st.markdown("**Inferred relationships**")
+                rels = infer_relationships(st.session_state.mapper_schema)
+                st.dataframe(
+                    pd.DataFrame(rels, columns=["parent_table", "child_table", "fk_column"])
+                    if rels
+                    else pd.DataFrame(columns=["parent_table", "child_table", "fk_column"]),
+                    use_container_width=True,
+                )
+            else:
+                st.info("Schema inference not available.")
+        with t4:
+            if st.session_state.mapper_schema:
                 st.markdown("##### Layered ERD — wireframe blueprint")
                 st.caption(
                     "Dashed clusters & edges = blueprint style (not a final DB diagram). "
-                    "Ingest → logical entities → shared keys → artifacts. "
-                    "Expand **Physical table detail** for a flat column list with PK/FK tags."
+                    "Ingest → logical entities → shared keys → artifacts."
                 )
                 dot_layered = generate_dataset_erd_dot(
                     st.session_state.uploaded_dfs,
-                    out["schema_guess"],
+                    st.session_state.mapper_schema,
                 )
                 st.graphviz_chart(dot_layered, use_container_width=True)
-                with st.expander("Physical table detail (columns, PK/FK)", expanded=False):
-                    st.caption(
-                        "One box per CSV. ◆ = PK, ◇ = FK, · = attribute. Edges: child → parent when FKs link tables."
-                    )
-                    dot_physical = generate_physical_erd_dot(
-                        st.session_state.uploaded_dfs,
-                        out["schema_guess"],
-                    )
-                    st.graphviz_chart(dot_physical, use_container_width=True)
-                with st.expander("Mermaid ERD (same schema, text)", expanded=False):
-                    st.code(out["mermaid_erd"], language="text")
-                with st.expander(
-                    "Runtime pipeline diagram (LangGraph / code — not data ERD)", expanded=False
-                ):
-                    st.caption(
-                        "This is how the **agent code** is wired; it does not replace the dataset ERD above."
-                    )
-                    st.graphviz_chart(
-                        generate_langgraph_runtime_dot(
-                            st.session_state.uploaded_dfs,
-                            out["schema_guess"],
-                        ),
-                        use_container_width=True,
-                    )
-            with tab_dd:
-                dd_df = pd.DataFrame(out["data_dictionary"])
+            else:
+                st.info("ERD not available.")
+        with t5:
+            if st.session_state.data_dictionary:
                 st.dataframe(
-                    dd_df,
+                    pd.DataFrame(st.session_state.data_dictionary),
                     use_container_width=True,
-                    height=420,
                     column_config={
                         "description": st.column_config.TextColumn(
                             "Description",
@@ -1866,116 +1575,91 @@ elif page == "2 · Mapper (Architect)":
                         ),
                     },
                 )
-
-            st.info("Review outputs, then **3 · HITL Checkpoint #1** to approve mappings.")
-        else:
-            st.markdown(
-                '<div class="dw-card"><p style="margin:0;color:#64748b;">Click <strong>Run Mapper</strong> to generate schema, ERD text, and dictionary.</p></div>',
-                unsafe_allow_html=True,
-            )
-
-# 3. HITL Checkpoint #1
-elif page == "3 · HITL Checkpoint #1":
-    _hero(
-        "Step 3 · Human review",
-        "HITL checkpoint #1",
-        "Confirm inferred ERD and mappings before execution — reduces semantic hallucination risk.",
-    )
-
-    if not st.session_state.mapper_output:
-        st.warning("Run the Mapper on **2 · Mapper (Architect)** first.")
-    else:
-        with st.expander("View mapper schema (JSON)", expanded=False):
-            st.json(st.session_state.mapper_output["schema_guess"])
-
-        approved = st.checkbox(
-            "I confirm the inferred ERD and mappings are correct (or acceptable for a test run).",
-            value=st.session_state.mapper_approved,
-        )
-
-        if st.button("Save decision", type="primary"):
-            st.session_state.mapper_approved = approved
-            st.session_state.run_logs.append({"stage": "HITL #1", "approved": approved})
-            if approved:
-                st.success("Mappings approved. Continue to **4 · Aggregator (Engineer)**.")
+                st.info("Review outputs, then continue to **Transform** (step 3).")
             else:
-                st.warning("Not approved — adjust inputs or Mapper before Aggregator.")
+                st.info("Data dictionary not available.")
 
-# 4. Aggregator (Engineer) Run
-elif page == "4 · Aggregator (Engineer)":
-    _hero(
-        "Step 4 · Engineer agent",
-        "Aggregator — joins & invariants",
-        "Executes validated mappings with deterministic row-count checks.",
-    )
+    c1, c2, _ = st.columns([1, 1, 6])
+    with c1:
+        st.button("Back", on_click=go_back)
+    with c2:
+        st.button("Next", on_click=go_next, type="primary")
+
+
+# -----------------------------------------------------------------------------
+# Page 3: Transform
+# -----------------------------------------------------------------------------
+elif current == "Transform":
+    _hero("Step 3", "Transform", "Transformation run + table preview")
 
     if not st.session_state.uploaded_dfs:
-        st.warning("Upload data in **1 · Upload & Profiling**.")
-    elif not st.session_state.mapper_output:
-        st.warning("Run **2 · Mapper** first.")
-    elif not st.session_state.mapper_approved:
-        st.error("Approve mappings in **3 · HITL Checkpoint #1** before running.")
+        st.warning("No uploaded data found. Go back to Upload.")
     else:
-        if st.button("▶ Run Aggregator (mock)", type="primary"):
-            df_joined, report = run_naive_aggregator(st.session_state.uploaded_dfs)
-            st.session_state.aggregator_output = df_joined
-            st.session_state.aggregator_report = report
-            st.session_state.run_logs.append({"stage": "Aggregator", "report": report})
-            st.rerun()
-
-        if st.session_state.aggregator_output is not None:
-            rep = st.session_state.aggregator_report
-            m1, m2, m3 = st.columns(3)
-            with m1:
-                st.metric("R_final", f"{rep['R_final']:,}")
-            with m2:
-                st.metric("Invariant", "✓ Pass" if rep["invariant_ok"] else "✗ Fail")
-            with m3:
-                st.metric("Source product cap", f"{rep['R_product_sources']:,}")
-
-            with st.expander("Full validation report", expanded=False):
-                st.json(rep)
-
-            if rep["invariant_ok"]:
-                st.success("Row-count invariant satisfied.")
-            else:
-                st.error("Invariant violated — use **5 · HITL Checkpoint #2**.")
-
-            st.subheader("Cleaned dataset preview")
-            st.dataframe(
-                st.session_state.aggregator_output.head(20),
-                use_container_width=True,
-                height=320,
+        transform_sig = (
+            tuple(sorted((name, len(df), len(df.columns)) for name, df in st.session_state.uploaded_dfs.items())),
+            st.session_state.mapper_source_sig,
+        )
+        if st.session_state.transform_source_sig != transform_sig:
+            st.session_state.transformed_df = run_transform(st.session_state.uploaded_dfs)
+            st.session_state.transform_source_sig = transform_sig
+            st.session_state.run_logs.append(
+                {"stage": "Transform", "status": "completed", "notes": "Auto-transform on page load"}
             )
 
-# 5. HITL Checkpoint #2
-elif page == "5 · HITL Checkpoint #2":
-    _hero(
-        "Step 5 · Review failures",
-        "HITL checkpoint #2",
-        "If invariants fail, record accept/reject before re-run to avoid agent loops.",
-    )
+        tk1, tk2, tk3 = st.columns(3)
+        with tk1:
+            st.metric("Source tables", len(st.session_state.uploaded_dfs))
+        with tk2:
+            st.metric("Transformed rows", len(st.session_state.transformed_df) if st.session_state.transformed_df is not None else 0)
+        with tk3:
+            st.metric("Execution mode", "Guided transform")
 
-    if st.session_state.aggregator_report is None:
-        st.warning("Run **4 · Aggregator** first.")
-    else:
-        st.json(st.session_state.aggregator_report)
-        decision = st.radio(
-            "Decision",
-            ["Accept current output", "Reject and request manual correction"],
-            horizontal=True,
-        )
-        if st.button("Record decision", type="primary"):
-            st.session_state.run_logs.append({"stage": "HITL #2", "decision": decision})
-            st.success("Recorded.")
+        t1, t2, t3 = st.tabs(["Transform", "Discarded Data", "Transformed data"])
+        with t1:
+            render_agent_dialogue_box(False)
 
-# 6. Logs & Downloads
-elif page == "6 · Logs & Downloads":
-    _hero(
-        "Step 6 · Audit & export",
-        "Logs & downloads",
-        "Session logs and CSV exports. Production would persist to SQLite/PostgreSQL.",
-    )
+            if st.session_state.transformed_df is not None:
+                st.markdown("**New data (transformed)**")
+                st.dataframe(st.session_state.transformed_df.head(20), use_container_width=True)
+                st.caption("Discarded or transformed data has been applied.")
+        with t2:
+            st.markdown("##### Discarded Data")
+            discarded = st.session_state.discarded_df
+            if discarded is not None and not discarded.empty:
+                st.dataframe(discarded, use_container_width=True, height=520)
+                st.caption(f"{len(discarded):,} rows · {len(discarded.columns)} columns")
+            else:
+                st.info(
+                    "No discarded rows are in session yet. When the transform pipeline records "
+                    "dropped or rejected records, they will show here."
+                )
+        with t3:
+            st.markdown("##### Transformed data")
+            if st.session_state.transformed_df is not None and not st.session_state.transformed_df.empty:
+                st.dataframe(
+                    st.session_state.transformed_df,
+                    use_container_width=True,
+                    height=520,
+                )
+                st.caption(
+                    f"{len(st.session_state.transformed_df):,} rows · "
+                    f"{len(st.session_state.transformed_df.columns)} columns"
+                )
+            else:
+                st.info("No transformed table yet. Complete **Upload** and **Mapper**, then return here.")
+
+    c1, c2, _ = st.columns([1, 1, 6])
+    with c1:
+        st.button("Back", on_click=go_back)
+    with c2:
+        st.button("Next", on_click=go_next, type="primary")
+
+
+# -----------------------------------------------------------------------------
+# Page 4: Logs & Downloads
+# -----------------------------------------------------------------------------
+elif current == "Logs & Downloads":
+    _hero("Step 4", "Logs & Downloads", "Session audit trail and CSV exports")
 
     col_log, col_dl = st.columns([1, 1])
 
@@ -1988,33 +1672,38 @@ elif page == "6 · Logs & Downloads":
 
     with col_dl:
         st.subheader("Downloads")
-        if st.session_state.aggregator_output is not None:
-            csv_bytes = to_csv_download(st.session_state.aggregator_output)
+        if st.session_state.transformed_df is not None and not st.session_state.transformed_df.empty:
             st.download_button(
-                label="⬇ Cleaned dataset (CSV)",
-                data=csv_bytes,
-                file_name="dataweaver_cleaned.csv",
+                label="⬇ Transformed dataset (CSV)",
+                data=to_csv_bytes(st.session_state.transformed_df),
+                file_name="dataweave_transformed.csv",
                 mime="text/csv",
                 use_container_width=True,
                 type="primary",
             )
         else:
-            st.caption("Run Aggregator to enable export.")
+            st.caption("Complete Transform to enable dataset export.")
 
-        if st.session_state.mapper_output is not None:
-            dd_df = pd.DataFrame(st.session_state.mapper_output["data_dictionary"])
-            csv_bytes = to_csv_download(dd_df)
+        if st.session_state.data_dictionary:
+            dd_df = pd.DataFrame(st.session_state.data_dictionary)
             st.download_button(
                 label="⬇ Data dictionary (CSV)",
-                data=csv_bytes,
+                data=to_csv_bytes(dd_df),
                 file_name="dataweaver_data_dictionary.csv",
                 mime="text/csv",
                 use_container_width=True,
             )
         else:
-            st.caption("Run Mapper to enable dictionary export.")
+            st.caption("Complete Mapper to enable dictionary export.")
+
+    c1, c2, _ = st.columns([1, 1, 6])
+    with c1:
+        st.button("Back", on_click=go_back)
+    with c2:
+        st.button("Next", disabled=True)
 
 st.markdown(
-    '<p style="text-align:center;color:#94a3b8;font-size:0.8rem;margin-top:2rem;">DataWeaver · Capstone · Team 2</p>',
+    '<p style="text-align:center;color:#94a3b8;font-size:0.8rem;margin-top:2rem;">DATA WEAVE · Capstone</p>',
     unsafe_allow_html=True,
 )
+
