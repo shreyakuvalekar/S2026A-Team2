@@ -6,6 +6,7 @@ class ETLState(TypedDict):
     source_type: str          # "api" or "csv"
     source_config: dict       # API params or {"path": "..."}
     user_instructions: str    # engineer-provided instructions passed to the Architect
+    connection_port: int | None
 
     # --- Output config (file-based) ---
     target_path: str          # output file path (csv or json)

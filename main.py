@@ -10,7 +10,7 @@ load_dotenv()
 from graph import build_graph
 
 
-def run_pipeline(source_type: str, source_config: dict, target_path: str = "", target_db: dict = None, max_retries: int = 3, user_instructions: str = ""):
+def run_pipeline(source_type: str, source_config: dict, target_path: str = "", target_db: dict = None, max_retries: int = 3, user_instructions: str = "", connection_port: int | None = None,):
     """Run the full ETL pipeline and return final state."""
     initial_state = {
         "source_type": source_type,
@@ -18,6 +18,7 @@ def run_pipeline(source_type: str, source_config: dict, target_path: str = "", t
         "target_path": target_path,
         "target_db": target_db or {},
         "user_instructions": user_instructions,
+        "connection_port": connection_port,
         "raw_data": None,
         "raw_schema": {},
         "transformation_plan": "",
