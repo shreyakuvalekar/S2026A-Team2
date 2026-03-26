@@ -11,7 +11,7 @@ final = run_pipeline(                                                           
     },
     user_instructions=os.getenv(
         "USER_INSTRUCTIONS",
-        "drop rows where rating is null"
+        "drop rows where rating is null and any rows with course titles other than English characters"
     ),
     connection_port=int(os.getenv("CONNECTION_PORT", "5000")),
 )

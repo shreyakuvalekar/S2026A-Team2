@@ -1,12 +1,12 @@
 """LangGraph StateGraph assembly (US5, US6)."""
 from langgraph.graph import StateGraph, END
 
-from etl_state import ETLState
+from pipeline.etl_state import ETLState
 from agents.scout import scout_node
 from agents.architect import architect_node
 from agents.engineer import engineer_node
 from agents.loader import loader_node
-from router import engineer_router
+from pipeline.router import engineer_router
 
 
 def build_graph() -> StateGraph:

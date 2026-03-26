@@ -20,15 +20,21 @@ Then open:
 """
 
 import os
+import sys
 import sqlite3
+import time
 import traceback
 
 import pandas as pd
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response, stream_with_context
 from flask_cors import CORS
 
+# Add project root to path so main.py and agents can be imported
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from main import run_pipeline  # Team pipeline entry point
+from pipeline.graph import build_graph  # For streaming
 
 load_dotenv()
 
@@ -38,6 +44,7 @@ CORS(app)
 # In-memory state for the current app session
 _last_run = {}
 _uploaded_file_path = None
+_transformed_data = []  # Full transformed_data from last pipeline run
 
 
 # --------------------------------------------------
@@ -249,6 +256,8 @@ def run_pipeline_endpoint():
         }
 
         _last_run = result
+        _transformed_data.clear()
+        _transformed_data.extend(final_state.get("transformed_data") or [])
         return jsonify(result)
 
     except Exception as e:
@@ -263,7 +272,128 @@ def run_pipeline_endpoint():
         return jsonify(error_result), 500
 
 # --------------------------------------------------
-# 3. Get Results from SQLite
+# 3. Stream Pipeline Execution (SSE)
+# --------------------------------------------------
+
+@app.route("/api/run/stream", methods=["POST"])
+def run_pipeline_stream():
+    """
+    Stream pipeline execution events via Server-Sent Events (SSE).
+    Emits one event per agent node as it completes.
+
+    Event format:
+        data: {"node": "scout"|"architect"|"engineer"|"loader"|"__end__", ...fields}\n\n
+    """
+    body = request.get_json(silent=True) or {}
+
+    source_type = body.get("source_type", "csv")
+    user_instructions = body.get("user_instructions", "")
+    target_db_path = body.get("target_db_path", "output/etl_output.db")
+    target_table = body.get("target_table", "courses")
+    if_exists = body.get("if_exists", "replace")
+    target_path = body.get("target_path", "")
+    connection_port = body.get("connection_port")
+
+    if source_type == "csv":
+        source_path = body.get("source_path") or _uploaded_file_path or "datasets/coursea_data.csv"
+        source_config = {"path": source_path}
+    elif source_type == "api":
+        source_config = {
+            "symbol": body.get("symbol"),
+            "interval": body.get("interval", "Daily"),
+            "apikey": body.get("apikey"),
+        }
+    else:
+        def err_gen():
+            import json as _json
+            yield f"data: {_json.dumps({'node': '__error__', 'error': f'Unsupported source_type: {source_type}'})}\n\n"
+        return Response(stream_with_context(err_gen()), mimetype="text/event-stream")
+
+    os.makedirs("output", exist_ok=True)
+
+    initial_state = {
+        "source_type": source_type,
+        "source_config": source_config,
+        "target_path": target_path,
+        "target_db": {"type": "sqlite", "path": target_db_path, "table": target_table, "if_exists": if_exists},
+        "user_instructions": user_instructions,
+        "connection_port": connection_port,
+        "raw_data": None,
+        "raw_schema": {},
+        "transformation_plan": "",
+        "transformation_code": "",
+        "transformed_data": None,
+        "transformation_diff": {},
+        "engineer_verdict": "",
+        "engineer_error": "",
+        "retry_count": 0,
+        "max_retries": body.get("max_retries", 3),
+        "audit_log": [],
+    }
+
+    def generate():
+        import json as _json
+        try:
+            pipeline = build_graph()
+
+            # stream_mode=["messages", "updates"]:
+            #   "messages" -> yields LLM tokens as they're generated (token-by-token)
+            #   "updates"  -> yields full node state update when a node completes
+            for mode, chunk in pipeline.stream(initial_state, stream_mode=["messages", "updates"]):
+
+                if mode == "messages":
+                    # chunk is (AIMessageChunk, metadata)
+                    msg_chunk, metadata = chunk
+                    token = getattr(msg_chunk, "content", "")
+                    node_name = metadata.get("langgraph_node", "")
+                    # Only stream tokens from LLM agents (architect + engineer)
+                    if token and node_name in ("architect", "engineer"):
+                        yield f"data: {_json.dumps({'type': 'token', 'node': node_name, 'token': token})}\n\n"
+                        if node_name == "architect":
+                            time.sleep(0.05)  # slower for readability
+                        # engineer streams at full speed
+
+                elif mode == "updates":
+                    # chunk is {node_name: state_update}
+                    for node_name, state_update in chunk.items():
+                        event = {"type": "node_done", "node": node_name}
+
+                        if node_name == "scout":
+                            event["record_count"] = len(state_update.get("raw_data") or [])
+                            event["raw_schema"] = state_update.get("raw_schema", {})
+
+                        elif node_name == "architect":
+                            event["transformation_plan"] = state_update.get("transformation_plan", "")
+
+                        elif node_name == "engineer":
+                            event["transformation_code"] = state_update.get("transformation_code", "")
+                            event["engineer_verdict"] = state_update.get("engineer_verdict", "")
+                            event["engineer_error"] = state_update.get("engineer_error", "")
+                            event["retry_count"] = state_update.get("retry_count", 0)
+
+                        elif node_name == "loader":
+                            event["rows_written"] = _count_rows(target_db_path, target_table)
+
+                        audit = state_update.get("audit_log", [])
+                        if audit:
+                            event["latest_audit"] = audit[-1]
+
+                        yield f"data: {_json.dumps(event)}\n\n"
+
+            yield f"data: {_json.dumps({'type': 'done', 'node': '__end__', 'status': 'complete'})}\n\n"
+
+        except Exception as e:
+            yield f"data: {_json.dumps({'type': 'error', 'node': '__error__', 'error': str(e), 'traceback': traceback.format_exc()})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# --------------------------------------------------
+# 4. Get Results from SQLite
 # --------------------------------------------------
 
 @app.route("/api/results", methods=["GET"])
@@ -320,7 +450,43 @@ def get_results():
 
 
 # --------------------------------------------------
-# 4. Get Schema / Column Info
+# 4. Get Transformed Data (in-memory, pre-load)
+# --------------------------------------------------
+
+@app.route("/api/transformed", methods=["GET"])
+def get_transformed():
+    """
+    Return the in-memory transformed_data from the last pipeline run.
+    This is the Engineer's output before it was written to SQLite —
+    useful for inspecting what was actually loaded.
+
+    Query parameters:
+        limit  (default: 100)
+        offset (default: 0)
+    """
+    if not _transformed_data:
+        return jsonify({
+            "error": "No transformed data available. Run /api/run first."
+        }), 404
+
+    limit = int(request.args.get("limit", 100))
+    offset = int(request.args.get("offset", 0))
+
+    page = _transformed_data[offset: offset + limit]
+    columns = list(page[0].keys()) if page else []
+
+    return jsonify({
+        "total_rows": len(_transformed_data),
+        "returned": len(page),
+        "limit": limit,
+        "offset": offset,
+        "columns": columns,
+        "rows": page,
+    })
+
+
+# --------------------------------------------------
+# 5. Get Schema / Column Info
 # --------------------------------------------------
 
 @app.route("/api/schema", methods=["GET"])

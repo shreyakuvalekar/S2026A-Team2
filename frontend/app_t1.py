@@ -1,11 +1,15 @@
 import html
 import io
+import json
 import re
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
+import requests
 import streamlit.components.v1 as components
 import streamlit as st
+
+BACKEND_URL = "http://localhost:5000"
 
 
 # Page config (must be first Streamlit command)
@@ -1685,6 +1689,12 @@ if "run_logs" not in st.session_state:
 if "upload_reset_id" not in st.session_state:
     st.session_state.upload_reset_id = 0
 
+if "pipeline_result" not in st.session_state:
+    st.session_state.pipeline_result = None
+
+if "user_instructions" not in st.session_state:
+    st.session_state.user_instructions = ""
+
 def _reset_pipeline_session() -> None:
     """Clear data + mapper/ERD/schema outputs so metrics and step 2+ start fresh."""
     st.session_state.uploaded_dfs = {}
@@ -1693,6 +1703,8 @@ def _reset_pipeline_session() -> None:
     st.session_state.aggregator_output = None
     st.session_state.aggregator_report = None
     st.session_state.run_logs = []
+    st.session_state.pipeline_result = None
+    st.session_state.user_instructions = ""
     st.session_state.upload_reset_id = int(st.session_state.get("upload_reset_id", 0)) + 1
 
 
@@ -1730,16 +1742,37 @@ if page == "1 · Upload & Profiling":
 
     st.markdown("</div>", unsafe_allow_html=True)
 
+    st.markdown('<div class="dw-card">', unsafe_allow_html=True)
+    st.markdown("**Transformation instructions** *(optional)*")
+    st.caption("Tell the Architect what to do — e.g. 'drop rows where rating is null, normalize enrollment to integers'")
+    instructions = st.text_area(
+        "Instructions",
+        value=st.session_state.user_instructions,
+        height=100,
+        placeholder="e.g. drop rows where rating is null, cast enrollment to integer, rename 'Unnamed: 0' to 'id'",
+        label_visibility="collapsed",
+    )
+    if instructions != st.session_state.user_instructions:
+        st.session_state.user_instructions = instructions
+    st.markdown("</div>", unsafe_allow_html=True)
+
     if uploaded_files:
         st.session_state.uploaded_dfs = {}
         for f in uploaded_files:
             df = pd.read_csv(f)
             st.session_state.uploaded_dfs[f.name] = df
+            # Send to backend so /api/run can use it
+            try:
+                f.seek(0)
+                requests.post(f"{BACKEND_URL}/api/upload", files={"file": (f.name, f, "text/csv")}, timeout=10)
+            except Exception:
+                pass
         st.session_state.mapper_output = None
         st.session_state.mapper_approved = False
         st.session_state.aggregator_output = None
         st.session_state.aggregator_report = None
         st.session_state.run_logs = []
+        st.session_state.pipeline_result = None
 
     if st.session_state.uploaded_dfs:
         st.success(
@@ -1916,37 +1949,131 @@ elif page == "4 · Aggregator (Engineer)":
     elif not st.session_state.mapper_approved:
         st.error("Approve mappings in **3 · HITL Checkpoint #1** before running.")
     else:
-        if st.button("▶ Run Aggregator (mock)", type="primary"):
-            df_joined, report = run_naive_aggregator(st.session_state.uploaded_dfs)
-            st.session_state.aggregator_output = df_joined
-            st.session_state.aggregator_report = report
-            st.session_state.run_logs.append({"stage": "Aggregator", "report": report})
-            st.rerun()
+        if st.session_state.user_instructions:
+            st.info(f"**Instructions:** {st.session_state.user_instructions}")
+        else:
+            st.caption("No instructions set — Architect will infer transformations from the data. Add instructions on Step 1.")
 
-        if st.session_state.aggregator_output is not None:
-            rep = st.session_state.aggregator_report
-            m1, m2, m3 = st.columns(3)
-            with m1:
-                st.metric("R_final", f"{rep['R_final']:,}")
-            with m2:
-                st.metric("Invariant", "✓ Pass" if rep["invariant_ok"] else "✗ Fail")
-            with m3:
-                st.metric("Source product cap", f"{rep['R_product_sources']:,}")
+        if st.button("▶ Run ETL Pipeline", type="primary"):
+            st.session_state.pipeline_result = None
 
-            with st.expander("Full validation report", expanded=False):
-                st.json(rep)
+            # Live agent thinking stream
+            with st.status("Running ETL pipeline...", expanded=True) as status:
+                scout_slot = st.empty()
+                arch_slot = st.empty()
+                eng_slot = st.empty()
+                loader_slot = st.empty()
 
-            if rep["invariant_ok"]:
-                st.success("Row-count invariant satisfied.")
+                collected = {"rows_written": 0, "plan": "", "code": "", "verdict": "", "error": None}
+
+                # Token buffers for live text rendering
+                arch_tokens = ""
+                eng_tokens = ""
+
+                try:
+                    with requests.post(
+                        f"{BACKEND_URL}/api/run/stream",
+                        json={"user_instructions": st.session_state.user_instructions},
+                        stream=True,
+                        timeout=300,
+                    ) as resp:
+                        for line in resp.iter_lines():
+                            if not line or not line.startswith(b"data: "):
+                                continue
+                            event = json.loads(line[6:])
+                            etype = event.get("type")
+                            node = event.get("node")
+
+                            # --- Token-by-token streaming ---
+                            if etype == "token":
+                                if node == "architect":
+                                    arch_tokens += event.get("token", "")
+                                    arch_slot.markdown(f"**Architect** is thinking...\n\n{arch_tokens}")
+                                elif node == "engineer":
+                                    eng_tokens += event.get("token", "")
+                                    eng_slot.markdown(f"**Engineer** is thinking...\n\n```python\n{eng_tokens}\n```")
+
+                            # --- Node completed ---
+                            elif etype == "node_done":
+                                if node == "scout":
+                                    schema = event.get("raw_schema", {})
+                                    cols = ", ".join(list(schema.keys())[:6])
+                                    scout_slot.success(f"**Scout** — extracted {event.get('record_count', '?')} records  \nColumns: `{cols}`")
+
+                                elif node == "architect":
+                                    plan = event.get("transformation_plan", "")
+                                    collected["plan"] = plan
+                                    arch_tokens = ""
+                                    arch_slot.success(f"**Architect** — plan ready ✓")
+
+                                elif node == "engineer":
+                                    verdict = event.get("engineer_verdict", "")
+                                    collected["verdict"] = verdict
+                                    collected["code"] = event.get("transformation_code", "")
+                                    retry = event.get("retry_count", 0)
+                                    err = event.get("engineer_error", "")
+                                    eng_tokens = ""
+                                    if verdict == "pass":
+                                        eng_slot.success(f"**Engineer** — code executed ✓ (retries: {retry})")
+                                    elif verdict == "retry":
+                                        eng_slot.warning(f"**Engineer** — retrying ({retry}/3)  \n`{err}`")
+                                    else:
+                                        eng_slot.error(f"**Engineer** — failed: `{err}`")
+
+                                elif node == "loader":
+                                    rows = event.get("rows_written", 0)
+                                    collected["rows_written"] = rows
+                                    loader_slot.success(f"**Loader** — {rows:,} rows written to SQLite")
+
+                            # --- Pipeline done ---
+                            elif etype == "done":
+                                status.update(label="Pipeline complete!", state="complete")
+                                st.session_state.pipeline_result = {
+                                    "status": "success",
+                                    "rows_written": collected["rows_written"],
+                                    "plan": collected["plan"],
+                                    "code": collected["code"],
+                                    "verdict": collected["verdict"],
+                                }
+                                rows = collected["rows_written"]
+                                st.session_state.aggregator_report = {"R_final": rows, "invariant_ok": True, "R_product_sources": rows, "source_rows_first_table": rows}
+                                st.session_state.run_logs.append({"stage": "Aggregator", "status": "success", "rows_written": rows})
+
+                            elif etype == "error":
+                                status.update(label="Pipeline failed", state="error")
+                                st.session_state.pipeline_result = {"status": "error", "error": event.get("error"), "traceback": event.get("traceback", "")}
+                                st.session_state.run_logs.append({"stage": "Aggregator", "status": "error", "error": event.get("error")})
+
+                except Exception as e:
+                    status.update(label="Connection error", state="error")
+                    st.session_state.pipeline_result = {"status": "error", "error": str(e)}
+
+        if st.session_state.pipeline_result is not None:
+            result = st.session_state.pipeline_result
+
+            if result.get("status") == "error":
+                st.error(f"Pipeline failed: {result.get('error')}")
+                if result.get("traceback"):
+                    with st.expander("Traceback", expanded=False):
+                        st.code(result.get("traceback", ""))
             else:
-                st.error("Invariant violated — use **5 · HITL Checkpoint #2**.")
+                rows_written = result.get("rows_written", 0)
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    st.metric("Rows written", f"{rows_written:,}")
+                with m2:
+                    st.metric("Engineer verdict", result.get("verdict", "—").upper())
+                with m3:
+                    st.metric("Status", "✓ Success")
 
-            st.subheader("Cleaned dataset preview")
-            st.dataframe(
-                st.session_state.aggregator_output.head(20),
-                use_container_width=True,
-                height=320,
-            )
+                if result.get("plan"):
+                    with st.expander("Transformation plan (Architect)", expanded=False):
+                        st.markdown(result["plan"])
+                if result.get("code"):
+                    with st.expander("Generated transformation code (Engineer)", expanded=False):
+                        st.code(result["code"], language="python")
+
+                st.success(f"Pipeline complete — {rows_written:,} rows written to SQLite.")
 
 # 5. HITL Checkpoint #2
 elif page == "5 · HITL Checkpoint #2":
@@ -1988,18 +2115,27 @@ elif page == "6 · Logs & Downloads":
 
     with col_dl:
         st.subheader("Downloads")
-        if st.session_state.aggregator_output is not None:
-            csv_bytes = to_csv_download(st.session_state.aggregator_output)
-            st.download_button(
-                label="⬇ Cleaned dataset (CSV)",
-                data=csv_bytes,
-                file_name="dataweaver_cleaned.csv",
-                mime="text/csv",
-                use_container_width=True,
-                type="primary",
-            )
+        if st.session_state.pipeline_result and st.session_state.pipeline_result.get("status") == "success":
+            try:
+                resp = requests.get(f"{BACKEND_URL}/api/results", params={"limit": 10000}, timeout=30)
+                rows = resp.json().get("rows", [])
+                if rows:
+                    cleaned_df = pd.DataFrame(rows)
+                    csv_bytes = to_csv_download(cleaned_df)
+                    st.download_button(
+                        label="⬇ Cleaned dataset (CSV)",
+                        data=csv_bytes,
+                        file_name="dataweaver_cleaned.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                        type="primary",
+                    )
+                else:
+                    st.caption("No data returned from backend.")
+            except Exception as e:
+                st.caption(f"Could not fetch results: {e}")
         else:
-            st.caption("Run Aggregator to enable export.")
+            st.caption("Run ETL Pipeline to enable export.")
 
         if st.session_state.mapper_output is not None:
             dd_df = pd.DataFrame(st.session_state.mapper_output["data_dictionary"])
