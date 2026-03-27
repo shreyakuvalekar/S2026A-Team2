@@ -2,3 +2,5 @@
 user_stories_US1_US15.md
 __pycache__/
 *.pyc
+*.ipynb
+*.db
