@@ -1,6 +1,6 @@
 # DataWeave — AI-Powered ETL Pipeline
 
-DataWeave is a multi-agent ETL (Extract, Transform, Load) system built with LangGraph. A team of four AI agents works in sequence to extract data from a source, plan and execute transformations, and load the result into a database or file. The pipeline is oriented around **locally-hosted LLMs via Ollama** — no OpenAI API key or cloud AI service required.
+DataWeave is a multi-agent ETL (Extract, Transform, Load) system built with LangGraph. A team of four AI agents works in sequence to extract data from a source, plan and execute transformations, and load the result into a database or file. The pipeline is oriented around **locally-hosted LLMs via Ollama** no OpenAI API key or cloud AI service required.
 
 ---
 
@@ -26,7 +26,7 @@ All agents share a single `ETLState` object. Every step appends to an `audit_log
 
 ## Local Model Orientation
 
-DataWeave is designed to run **entirely on local hardware** — the LLM agents (Architect and Engineer) call an Ollama instance rather than a cloud API. This means:
+DataWeave is designed to run **entirely on local hardware**  the LLM agents (Architect and Engineer) call an Ollama instance rather than a cloud API. This means:
 
 - Your data never leaves your machine or network
 - No per-token costs
