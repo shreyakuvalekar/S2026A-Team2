@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 *.ipynb
 *.db
+notes_for_dev/

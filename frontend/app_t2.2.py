@@ -416,6 +416,18 @@ if "user_instructions" not in st.session_state:
     st.session_state.user_instructions: str = ""
 if "pipeline_run_result" not in st.session_state:
     st.session_state.pipeline_run_result: Optional[Dict] = None
+if "generated_code_path" not in st.session_state:
+    st.session_state.generated_code_path: str = ""
+if "hitl_stage" not in st.session_state:
+    st.session_state.hitl_stage: str = "idle"   # idle | plan_ready | code_ready | complete
+if "hitl_plan" not in st.session_state:
+    st.session_state.hitl_plan: str = ""
+if "hitl_code" not in st.session_state:
+    st.session_state.hitl_code: str = ""
+if "hitl_code_path" not in st.session_state:
+    st.session_state.hitl_code_path: str = ""
+if "hitl_error" not in st.session_state:
+    st.session_state.hitl_error: str = ""
 
 
 PAGES = ["Upload", "Mapper", "Transform", "Logs & Downloads"]
@@ -445,17 +457,26 @@ def _reset_mapper_outputs() -> None:
     st.session_state.transform_source_sig = None
 
 
-def _reset_pipeline_session() -> None:
-    st.session_state.uploaded_dfs = {}
-    _reset_mapper_outputs()
-    st.session_state.run_logs = []
-    st.session_state.source_mode = "Upload csv"
-    st.session_state.trigger_csv_picker = False
+def _reset_hitl() -> None:
+    st.session_state.hitl_stage = "idle"
+    st.session_state.hitl_plan = ""
+    st.session_state.hitl_code = ""
+    st.session_state.hitl_code_path = ""
+    st.session_state.hitl_error = ""
     st.session_state.agent_dialogue = {
         "Scout": "Waiting for connection...",
         "Architect": "Waiting for connection...",
         "Engineer": "Waiting for connection...",
     }
+
+
+def _reset_pipeline_session() -> None:
+    st.session_state.uploaded_dfs = {}
+    _reset_mapper_outputs()
+    _reset_hitl()
+    st.session_state.run_logs = []
+    st.session_state.source_mode = "Upload csv"
+    st.session_state.trigger_csv_picker = False
     st.session_state.upload_reset_id = int(st.session_state.get("upload_reset_id", 0)) + 1
 
 
@@ -1650,162 +1671,419 @@ elif current == "Mapper":
 # Page 3: Transform
 # -----------------------------------------------------------------------------
 elif current == "Transform":
-    _hero("Step 3", "Transform", "Transformation run + table preview")
+    _hero("Step 3", "Transform", "Human-in-the-loop: review plan → review code → execute")
 
     if not st.session_state.uploaded_dfs:
         st.warning("No uploaded data found. Go back to Upload.")
     else:
-        transform_sig = (
-            tuple(sorted((name, len(df), len(df.columns)) for name, df in st.session_state.uploaded_dfs.items())),
-            st.session_state.mapper_source_sig,
-        )
-        if st.session_state.transform_source_sig != transform_sig:
-            st.session_state.transformed_df = run_transform(st.session_state.uploaded_dfs)
-            st.session_state.transform_source_sig = transform_sig
-            st.session_state.run_logs.append(
-                {"stage": "Transform", "status": "completed", "notes": "Auto-transform on page load"}
-            )
+        stage = st.session_state.hitl_stage
 
         tk1, tk2, tk3 = st.columns(3)
         with tk1:
             st.metric("Source tables", len(st.session_state.uploaded_dfs))
         with tk2:
-            st.metric("Transformed rows", len(st.session_state.transformed_df) if st.session_state.transformed_df is not None else 0)
+            n_rows = len(st.session_state.transformed_df) if st.session_state.transformed_df is not None else 0
+            st.metric("Transformed rows", n_rows)
         with tk3:
-            st.metric("Execution mode", "Guided transform")
+            _stage_labels = {
+                "idle": "Ready",
+                "plan_ready": "Review plan",
+                "code_ready": "Review code",
+                "complete": "Done",
+            }
+            st.metric("Stage", _stage_labels.get(stage, stage))
+
+        # Persistent error banner — survives reruns
+        if st.session_state.hitl_error:
+            st.error(st.session_state.hitl_error)
+            if st.button("Dismiss error", key="dismiss_hitl_error"):
+                st.session_state.hitl_error = ""
+                st.rerun()
 
         t1, t2, t3 = st.tabs(["Transform", "Discarded Data", "Transformed data"])
+
         with t1:
-            st.markdown("**User instructions**")
-            st.caption("Describe any custom transformation rules to pass to the pipeline agents.")
-            user_instructions = st.text_area(
-                "Instructions for the pipeline",
-                value=st.session_state.user_instructions,
-                placeholder=(
-                    "e.g. Drop rows where revenue is null. "
-                    "Normalize date columns to ISO 8601. "
-                    "Rename 'cust_id' to 'customer_id'."
-                ),
-                height=100,
-                key="user_instructions_input",
-                label_visibility="collapsed",
-            )
-            st.session_state.user_instructions = user_instructions
+            # ── Pipeline step progress bar ───────────────────────────────────────
+            _step_names = ["Instructions", "Approve plan", "Approve code", "Complete"]
+            _stage_to_step = {"idle": 0, "plan_ready": 1, "code_ready": 2, "complete": 3}
+            _active = _stage_to_step.get(stage, 0)
+            _step_cols = st.columns(4)
+            for _si, (_sc, _sn) in enumerate(zip(_step_cols, _step_names)):
+                with _sc:
+                    if _si < _active:
+                        st.markdown(
+                            f'<div style="text-align:center;padding:6px 4px;border-radius:6px;'
+                            f'background:#d1fae5;color:#065f46;font-size:0.78rem;font-weight:600;">'
+                            f'&#10003; {_sn}</div>',
+                            unsafe_allow_html=True,
+                        )
+                    elif _si == _active:
+                        st.markdown(
+                            f'<div style="text-align:center;padding:6px 4px;border-radius:6px;'
+                            f'background:#dbeafe;color:#1e40af;font-size:0.78rem;font-weight:700;'
+                            f'border:2px solid #3b82f6;">'
+                            f'&#9654; {_sn}</div>',
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.markdown(
+                            f'<div style="text-align:center;padding:6px 4px;border-radius:6px;'
+                            f'background:#f1f5f9;color:#94a3b8;font-size:0.78rem;">'
+                            f'{_sn}</div>',
+                            unsafe_allow_html=True,
+                        )
+            st.markdown("<div style='margin-top:0.75rem'></div>", unsafe_allow_html=True)
 
-            if st.button("Run pipeline", type="primary", key="run_pipeline_btn"):
-                if not st.session_state.uploaded_dfs:
-                    st.error("Upload a dataset first before running the pipeline.")
-                else:
-                    source_name = next(iter(st.session_state.uploaded_dfs))
-                    payload = {
-                        "source_type": "csv",
-                        "source_path": f"datasets/{source_name}",
-                        "user_instructions": st.session_state.user_instructions,
-                        "target_db_path": "output/etl_output.db",
-                        "target_table": "courses",
-                        "if_exists": "replace",
-                    }
-
-                    # Reset dialogue for this run
-                    streaming_dialogue: Dict[str, str] = {
-                        "Scout": "Connecting…",
-                        "Architect": "Waiting…",
-                        "Engineer": "Waiting…",
-                    }
-                    st.session_state.agent_dialogue = streaming_dialogue
-
-                    status_box = st.empty()
-                    dialogue_placeholder = st.empty()
-                    dialogue_placeholder.markdown(
-                        _agent_dialogue_html(streaming_dialogue), unsafe_allow_html=True
+            # ── STEP 1: idle — instructions + run ───────────────────────────────
+            if stage == "idle":
+                with st.container(border=True):
+                    st.markdown("**Step 1 — Instructions**")
+                    st.caption("Describe the transformation rules, then click Run to start the pipeline. Scout and Architect agents will run automatically.")
+                    user_instructions = st.text_area(
+                        "Instructions for the pipeline",
+                        value=st.session_state.user_instructions,
+                        placeholder=(
+                            "e.g. Drop rows where revenue is null. "
+                            "Normalize date columns to ISO 8601. "
+                            "Rename 'cust_id' to 'customer_id'."
+                        ),
+                        height=100,
+                        key="user_instructions_input",
+                        label_visibility="collapsed",
                     )
-                    token_buf: Dict[str, str] = {"architect": "", "engineer": ""}
+                    st.session_state.user_instructions = user_instructions
 
-                    try:
-                        with requests.post(
-                            f"{BACKEND_URL}/api/run/stream",
-                            json=payload,
-                            stream=True,
-                            timeout=300,
-                        ) as resp:
-                            for raw_line in resp.iter_lines():
-                                if not raw_line:
-                                    continue
-                                line = raw_line.decode("utf-8")
-                                if not line.startswith("data: "):
-                                    continue
+                    run_col, _ = st.columns([1, 3])
+                    with run_col:
+                        run_clicked = st.button("Run pipeline", type="primary", key="run_pipeline_btn", use_container_width=True)
+
+                if run_clicked:
+                    if not st.session_state.uploaded_dfs:
+                        st.session_state.hitl_error = "No file uploaded. Go to the Upload step first."
+                        st.rerun()
+                    else:
+                        source_name = next(iter(st.session_state.uploaded_dfs))
+                        source_df = st.session_state.uploaded_dfs[source_name]
+
+                        upload_error = None
+                        saved_path = f"datasets/{source_name}"
+                        try:
+                            upload_resp = requests.post(
+                                f"{BACKEND_URL}/api/upload",
+                                files={"file": (source_name, to_csv_bytes(source_df), "text/csv")},
+                                timeout=30,
+                            )
+                            if upload_resp.status_code == 200:
+                                saved_path = upload_resp.json().get("saved_path", saved_path)
+                            else:
+                                upload_error = upload_resp.json().get("error", "Upload failed")
+                        except requests.exceptions.ConnectionError:
+                            upload_error = f"Cannot reach backend at {BACKEND_URL}. Is the API server running?"
+                        except Exception as exc:
+                            upload_error = f"Upload error: {exc}"
+
+                        if upload_error:
+                            st.session_state.hitl_error = upload_error
+                            st.rerun()
+                        else:
+                            table_name = source_name.rsplit(".", 1)[0].lower().replace(" ", "_").replace("-", "_")
+                            payload = {
+                                "source_type": "csv",
+                                "source_path": saved_path,
+                                "user_instructions": st.session_state.user_instructions,
+                                "target_db_path": "output/etl_output.db",
+                                "target_table": table_name,
+                                "if_exists": "replace",
+                            }
+
+                            streaming_dialogue: Dict[str, str] = {
+                                "Scout": "Connecting…",
+                                "Architect": "Waiting…",
+                                "Engineer": "Waiting…",
+                            }
+                            st.session_state.agent_dialogue = streaming_dialogue
+                            with st.status("Running Scout + Architect…", expanded=True) as run_status:
+                                st.write("Uploading data and starting pipeline…")
+                                token_buf: Dict[str, str] = {"architect": ""}
+                                plan_preview = st.empty()
+
                                 try:
-                                    event = _json.loads(line[6:])
-                                except _json.JSONDecodeError:
-                                    continue
+                                    with requests.post(
+                                        f"{BACKEND_URL}/api/run/stream/plan",
+                                        json=payload, stream=True, timeout=300,
+                                    ) as resp:
+                                        for raw_line in resp.iter_lines():
+                                            if not raw_line:
+                                                continue
+                                            line = raw_line.decode("utf-8")
+                                            if not line.startswith("data: "):
+                                                continue
+                                            try:
+                                                event = _json.loads(line[6:])
+                                            except _json.JSONDecodeError:
+                                                continue
 
-                                etype = event.get("type", "")
-                                node = event.get("node", "")
+                                            etype = event.get("type", "")
+                                            node = event.get("node", "")
 
-                                if etype == "token":
-                                    if node in token_buf:
-                                        token_buf[node] += event.get("token", "")
-                                        key = node.capitalize()
-                                        streaming_dialogue[key] = token_buf[node]
-                                        dialogue_placeholder.markdown(
-                                            _agent_dialogue_html(streaming_dialogue),
-                                            unsafe_allow_html=True,
-                                        )
+                                            if etype == "token" and node == "architect":
+                                                token_buf["architect"] += event.get("token", "")
+                                                plan_preview.markdown(token_buf["architect"])
 
-                                elif etype == "node_done":
-                                    if node == "scout":
-                                        count = event.get("record_count", "?")
-                                        streaming_dialogue["Scout"] = f"Done — {count} records ingested."
-                                    elif node == "architect":
-                                        plan = event.get("transformation_plan", "")
-                                        streaming_dialogue["Architect"] = plan.strip() or "Plan generated."
-                                        token_buf["architect"] = ""
-                                    elif node == "engineer":
-                                        verdict = event.get("engineer_verdict", "")
-                                        err = event.get("engineer_error", "")
-                                        streaming_dialogue["Engineer"] = (
-                                            f"Verdict: {verdict}" + (f"\nError: {err}" if err else "")
-                                        )
-                                        token_buf["engineer"] = ""
-                                    elif node == "loader":
-                                        rows = event.get("rows_written", "?")
-                                        streaming_dialogue["Scout"] += f"\nLoaded: {rows} rows to DB."
-                                    dialogue_placeholder.markdown(
-                                        _agent_dialogue_html(streaming_dialogue),
-                                        unsafe_allow_html=True,
-                                    )
-                                    audit = event.get("latest_audit")
-                                    if audit:
-                                        status_box.caption(
-                                            f"[{audit.get('agent')}] {audit.get('action')} — {audit.get('summary')}"
-                                        )
+                                            elif etype == "node_done":
+                                                if node == "scout":
+                                                    st.write(f"Scout done — {event.get('record_count', '?')} records ingested.")
+                                                    streaming_dialogue["Scout"] = f"Done — {event.get('record_count', '?')} records ingested."
+                                                elif node == "architect":
+                                                    st.write("Architect done — plan ready for review.")
+                                                    streaming_dialogue["Architect"] = event.get("transformation_plan", "").strip() or "Plan generated."
 
-                                elif etype == "done":
-                                    st.session_state.agent_dialogue = streaming_dialogue
-                                    st.session_state.pipeline_run_result = {"status": "success"}
-                                    st.session_state.run_logs.append(
-                                        {"stage": "Pipeline run", "status": "success"}
-                                    )
-                                    status_box.success("Pipeline complete!")
-                                    break
+                                            elif etype == "plan_ready":
+                                                st.session_state.hitl_plan = event.get("transformation_plan", "")
+                                                st.session_state.hitl_stage = "plan_ready"
+                                                st.session_state.hitl_error = ""
+                                                st.session_state.agent_dialogue = streaming_dialogue
+                                                st.session_state.run_logs.append({"stage": "Phase 1 — plan", "status": "ready for review"})
+                                                run_status.update(label="Architect plan ready — awaiting your approval", state="complete")
+                                                break
 
-                                elif etype == "error":
-                                    status_box.error(f"Pipeline error: {event.get('error', 'unknown')}")
-                                    break
+                                            elif etype == "error":
+                                                st.session_state.hitl_error = f"Pipeline error (Phase 1): {event.get('error', 'unknown')}"
+                                                run_status.update(label="Pipeline error", state="error")
+                                                break
 
-                    except requests.exceptions.ConnectionError:
-                        st.error(f"Cannot reach backend at {BACKEND_URL}. Is the API server running?")
-                    except Exception as exc:
-                        st.error(f"Unexpected error: {exc}")
+                                except requests.exceptions.ConnectionError:
+                                    st.session_state.hitl_error = f"Cannot reach backend at {BACKEND_URL}. Is the API server running?"
+                                except Exception as exc:
+                                    st.session_state.hitl_error = f"Unexpected error: {exc}"
 
+                            st.rerun()
+
+            # ── STEP 2: plan_ready — Architect plan approval ─────────────────────
+            elif stage == "plan_ready":
+                st.markdown(
+                    '<div style="padding:10px 14px;border-radius:8px;background:#fef9c3;'
+                    'border:1px solid #fbbf24;color:#713f12;font-weight:600;margin-bottom:0.75rem;">'
+                    '&#9203; Waiting for your approval — review the Architect\'s plan below</div>',
+                    unsafe_allow_html=True,
+                )
+
+                with st.container(border=True):
+                    st.markdown("**Step 2 — Approve transformation plan**")
+                    st.caption("The Architect mapped out how the data will be transformed. Edit the plan if needed, then approve to send it to the Engineer for code generation.")
+
+                    edited_plan = st.text_area(
+                        "Transformation plan",
+                        value=st.session_state.hitl_plan,
+                        height=320,
+                        key="hitl_plan_editor",
+                        label_visibility="collapsed",
+                    )
+
+                    approve_col, reset_col = st.columns([3, 1])
+                    with approve_col:
+                        approve_plan = st.button(
+                            "Approve plan — generate code",
+                            type="primary",
+                            key="approve_plan_btn",
+                            use_container_width=True,
+                        )
+                    with reset_col:
+                        if st.button("Start over", key="reset_from_plan_btn", use_container_width=True):
+                            _reset_hitl()
+                            st.rerun()
+
+                if approve_plan:
+                    st.session_state.hitl_plan = edited_plan
+                    streaming_dialogue = dict(st.session_state.agent_dialogue)
+                    streaming_dialogue["Engineer"] = "Generating code…"
+
+                    with st.status("Engineer generating transformation code…", expanded=True) as gen_status:
+                        token_buf = {"engineer_generate": ""}
+                        code_preview = st.empty()
+
+                        try:
+                            with requests.post(
+                                f"{BACKEND_URL}/api/run/stream/generate",
+                                json={"transformation_plan": edited_plan},
+                                stream=True, timeout=300,
+                            ) as resp:
+                                for raw_line in resp.iter_lines():
+                                    if not raw_line:
+                                        continue
+                                    line = raw_line.decode("utf-8")
+                                    if not line.startswith("data: "):
+                                        continue
+                                    try:
+                                        event = _json.loads(line[6:])
+                                    except _json.JSONDecodeError:
+                                        continue
+
+                                    etype = event.get("type", "")
+                                    node = event.get("node", "")
+
+                                    if etype == "token" and node == "engineer_generate":
+                                        token_buf["engineer_generate"] += event.get("token", "")
+                                        streaming_dialogue["Engineer"] = token_buf["engineer_generate"]
+                                        code_preview.code(token_buf["engineer_generate"], language="python")
+
+                                    elif etype == "node_done" and node == "engineer_generate":
+                                        n_lines = len(event.get("transformation_code", "").splitlines())
+                                        st.write(f"Code generated — {n_lines} lines. Ready for review.")
+                                        streaming_dialogue["Engineer"] = f"Code generated ({n_lines} lines). Ready for review."
+
+                                    elif etype == "code_ready":
+                                        st.session_state.hitl_code = event.get("transformation_code", "")
+                                        st.session_state.hitl_code_path = event.get("generated_code_path", "")
+                                        st.session_state.generated_code_path = event.get("generated_code_path", "")
+                                        st.session_state.hitl_stage = "code_ready"
+                                        st.session_state.hitl_error = ""
+                                        st.session_state.agent_dialogue = streaming_dialogue
+                                        st.session_state.run_logs.append({"stage": "Phase 2a — generate", "status": "ready for review"})
+                                        gen_status.update(label="Code ready — awaiting your approval", state="complete")
+                                        break
+
+                                    elif etype == "error":
+                                        st.session_state.hitl_error = f"Pipeline error (Phase 2a): {event.get('error', 'unknown')}"
+                                        gen_status.update(label="Code generation error", state="error")
+                                        break
+
+                        except requests.exceptions.ConnectionError:
+                            st.session_state.hitl_error = f"Cannot reach backend at {BACKEND_URL}. Is the API server running?"
+                        except Exception as exc:
+                            st.session_state.hitl_error = f"Unexpected error: {exc}"
+
+                    st.rerun()
+
+            # ── STEP 3: code_ready — Engineer code approval ──────────────────────
+            elif stage == "code_ready":
+                st.markdown(
+                    '<div style="padding:10px 14px;border-radius:8px;background:#fef9c3;'
+                    'border:1px solid #fbbf24;color:#713f12;font-weight:600;margin-bottom:0.75rem;">'
+                    '&#9203; Waiting for your approval — review the Engineer\'s code below</div>',
+                    unsafe_allow_html=True,
+                )
+
+                with st.container(border=True):
+                    st.markdown("**Step 3 — Approve transformation code**")
+                    st.caption("The Engineer wrote this Python script to execute the plan. Download it to inspect locally, then approve to run it.")
+
+                    st.code(st.session_state.hitl_code, language="python")
+
+                    dl_col, approve_col, reset_col = st.columns([2, 2, 1])
+                    with dl_col:
+                        st.download_button(
+                            label="Download .py",
+                            data=st.session_state.hitl_code.encode("utf-8"),
+                            file_name="engineer_transformation.py",
+                            mime="text/x-python",
+                            use_container_width=True,
+                        )
+                    with approve_col:
+                        approve_code = st.button(
+                            "Approve & execute",
+                            type="primary",
+                            key="approve_code_btn",
+                            use_container_width=True,
+                        )
+                    with reset_col:
+                        if st.button("Start over", key="reset_from_code_btn", use_container_width=True):
+                            _reset_hitl()
+                            st.rerun()
+
+                if approve_code:
+                    streaming_dialogue = dict(st.session_state.agent_dialogue)
+                    streaming_dialogue["Engineer"] = "Executing approved code…"
+
+                    with st.status("Executing transformation…", expanded=True) as exec_status:
+                        try:
+                            with requests.post(
+                                f"{BACKEND_URL}/api/run/stream/run",
+                                json={"transformation_code": st.session_state.hitl_code},
+                                stream=True, timeout=300,
+                            ) as resp:
+                                for raw_line in resp.iter_lines():
+                                    if not raw_line:
+                                        continue
+                                    line = raw_line.decode("utf-8")
+                                    if not line.startswith("data: "):
+                                        continue
+                                    try:
+                                        event = _json.loads(line[6:])
+                                    except _json.JSONDecodeError:
+                                        continue
+
+                                    etype = event.get("type", "")
+                                    node = event.get("node", "")
+
+                                    if etype == "token" and node == "engineer_generate":
+                                        streaming_dialogue["Engineer"] = "Auto-retry: regenerating code…"
+                                        st.write("Execution failed — auto-retrying with new code…")
+
+                                    elif etype == "node_done":
+                                        if node == "engineer_generate":
+                                            new_code = event.get("transformation_code", "")
+                                            if new_code:
+                                                st.session_state.hitl_code = new_code
+                                                st.session_state.generated_code_path = event.get("generated_code_path", "")
+                                            streaming_dialogue["Engineer"] = "Code regenerated (retry). Executing…"
+                                            st.write("New code generated. Executing…")
+                                        elif node == "engineer_execute":
+                                            verdict = event.get("engineer_verdict", "")
+                                            err = event.get("engineer_error", "")
+                                            streaming_dialogue["Engineer"] = (
+                                                f"Verdict: {verdict}" + (f"\nError: {err}" if err else "")
+                                            )
+                                            st.write(f"Execute verdict: {verdict}" + (f" — {err}" if err else ""))
+                                            transformed_records = event.get("transformed_data")
+                                            if transformed_records and verdict == "pass":
+                                                st.session_state.transformed_df = pd.DataFrame(transformed_records)
+                                        elif node == "loader":
+                                            rows = event.get("rows_written", "?")
+                                            streaming_dialogue["Scout"] = (
+                                                st.session_state.agent_dialogue.get("Scout", "") + f"\nLoaded: {rows} rows to DB."
+                                            )
+                                            st.write(f"Loader done — {rows} rows written to database.")
+
+                                    elif etype == "done":
+                                        st.session_state.hitl_stage = "complete"
+                                        st.session_state.agent_dialogue = streaming_dialogue
+                                        st.session_state.pipeline_run_result = {"status": "success"}
+                                        st.session_state.run_logs.append({"stage": "Pipeline run", "status": "success"})
+                                        exec_status.update(label="Pipeline complete!", state="complete")
+                                        break
+
+                                    elif etype == "error":
+                                        st.session_state.hitl_error = f"Pipeline error: {event.get('error', 'unknown')}"
+                                        exec_status.update(label="Execution error", state="error")
+                                        break
+
+                        except requests.exceptions.ConnectionError:
+                            st.session_state.hitl_error = f"Cannot reach backend at {BACKEND_URL}. Is the API server running?"
+                        except Exception as exc:
+                            st.session_state.hitl_error = f"Unexpected error: {exc}"
+
+                    st.rerun()
+
+            # ── STEP 4: complete ─────────────────────────────────────────────────
+            elif stage == "complete":
+                st.success("Pipeline complete — data transformed and loaded.")
+                if st.session_state.transformed_df is not None:
+                    st.markdown("**Transformed data preview**")
+                    st.dataframe(st.session_state.transformed_df.head(20), use_container_width=True)
+                    st.caption("Go to the **Transformed data** tab or **Logs & Downloads** for exports and the full audit trail.")
+                c_again, _ = st.columns([1, 4])
+                with c_again:
+                    if st.button("Run again", type="secondary", key="run_again_btn"):
+                        _reset_hitl()
+                        st.rerun()
+
+            # Always show agent dialogue
+            st.markdown("---")
             st.markdown("**Agent dialogue**")
-            st.caption("Live status feed from agents (updates when backend is connected).")
+            st.caption("Live status feed from agents.")
             st.markdown(_agent_dialogue_html(st.session_state.agent_dialogue), unsafe_allow_html=True)
 
-            if st.session_state.transformed_df is not None:
-                st.markdown("**New data (transformed)**")
-                st.dataframe(st.session_state.transformed_df.head(20), use_container_width=True)
-                st.caption("Discarded or transformed data has been applied.")
         with t2:
             st.markdown("##### Discarded Data")
             discarded = st.session_state.discarded_df
@@ -1879,6 +2157,26 @@ elif current == "Logs & Downloads":
             )
         else:
             st.caption("Complete Mapper to enable dictionary export.")
+
+        st.markdown("---")
+        st.caption("**Engineer-generated transformation code**")
+        if st.session_state.generated_code_path:
+            try:
+                resp = requests.get(f"{BACKEND_URL}/api/download/engineer_code", timeout=10)
+                if resp.status_code == 200:
+                    st.download_button(
+                        label="⬇ Transformation script (.py)",
+                        data=resp.content,
+                        file_name="engineer_transformation.py",
+                        mime="text/x-python",
+                        use_container_width=True,
+                    )
+                else:
+                    st.caption("Could not fetch code from backend.")
+            except Exception:
+                st.caption("Backend unreachable.")
+        else:
+            st.caption("Complete Transform to enable code download.")
 
     c1, c2, _ = st.columns([1, 1, 6])
     with c1:
