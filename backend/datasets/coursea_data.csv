@@ -1,4 +1,4 @@
-,course_title,course_organization,course_Certificate_type,course_rating,course_difficulty,course_students_enrolled
+Unnamed: 0,course_title,course_organization,course_Certificate_type,course_rating,course_difficulty,course_students_enrolled
 134,(ISC)² Systems Security Certified Practitioner (SSCP),(ISC)²,SPECIALIZATION,4.7,Beginner,5.3k
 743,A Crash Course in Causality:  Inferring Causal Effects from Observational Data,University of Pennsylvania,COURSE,4.7,Intermediate,17k
 874,A Crash Course in Data Science,Johns Hopkins University,COURSE,4.5,Mixed,130k
@@ -250,7 +250,7 @@
 707,Ecosystem Services: a Method for Sustainable Development,University of Geneva,COURSE,4.7,Intermediate,16k
 773,Effective Compliance Programs,University of Pennsylvania,COURSE,4.9,Mixed,3.4k
 636,Egiptología (Egyptology),Universitat Autònoma de Barcelona,COURSE,4.9,Beginner,46k
-789,El Abogado del Futuro: Legaltech y la Transformación Digital del Derecho,Universidad Austral,COURSE,5,Beginner,1.5k
+789,El Abogado del Futuro: Legaltech y la Transformación Digital del Derecho,Universidad Austral,COURSE,5.0,Beginner,1.5k
 564,Elastic Google Cloud Infrastructure: Scaling and Automation,Google Cloud,COURSE,4.7,Intermediate,57k
 870,Electric Industry Operations and Markets,Duke University,COURSE,4.8,Beginner,12k
 122,Electronic Music Production,Berklee College of Music,SPECIALIZATION,4.8,Intermediate,110k
@@ -431,7 +431,7 @@
 318,In the Studio: Postwar Abstract Painting,The Museum of Modern Art,COURSE,4.9,Beginner,79k
 110,Indigenous Canada,University of Alberta,COURSE,4.8,Mixed,51k
 572,Industrial IoT on Google Cloud Platform,Google Cloud,COURSE,4.5,Beginner,34k
-401,Infectious Disease Modelling,Imperial College London,SPECIALIZATION,5,Intermediate,1.6k
+401,Infectious Disease Modelling,Imperial College London,SPECIALIZATION,5.0,Intermediate,1.6k
 805,Influencer Marketing Strategy,Rutgers the State University of New Jersey,COURSE,4.4,Intermediate,12k
 224,"Influencing: Storytelling, Change Management and Governance",Macquarie University,SPECIALIZATION,4.8,Beginner,22k
 549,Information Security: Context and Introduction,"Royal Holloway, University of London",COURSE,4.6,Beginner,32k
@@ -521,7 +521,7 @@
 758,Introduction to Systems Engineering,UNSW Sydney (The University of New South Wales),COURSE,4.7,Mixed,33k
 230,"Introduction to TensorFlow for Artificial Intelligence, Machine Learning, and Deep Learning",deeplearning.ai,COURSE,4.7,Intermediate,150k
 735,Introduction to Thermodynamics: Transferring Energy from Here to There,University of Michigan,COURSE,4.8,Beginner,4.1k
-659,"Introduction to Trading, Machine Learning & GCP",New York Institute of Finance,COURSE,4,Intermediate,13k
+659,"Introduction to Trading, Machine Learning & GCP",New York Institute of Finance,COURSE,4.0,Intermediate,13k
 557,Introduction to Typography,California Institute of the Arts,COURSE,4.8,Beginner,72k
 428,Introduction to User Experience Design,Georgia Institute of Technology,COURSE,4.5,Beginner,87k
 744,Introduction to User Experience Principles and Processes,University of Michigan,COURSE,4.8,Beginner,16k
@@ -597,7 +597,7 @@
 55,Mathematics for Machine Learning,Imperial College London,SPECIALIZATION,4.6,Beginner,150k
 223,Mathematics for Machine Learning: Linear Algebra,Imperial College London,COURSE,4.7,Beginner,140k
 528,Mathematics for Machine Learning: Multivariate Calculus,Imperial College London,COURSE,4.7,Beginner,51k
-873,Mathematics for Machine Learning: PCA,Imperial College London,COURSE,4,Intermediate,33k
+873,Mathematics for Machine Learning: PCA,Imperial College London,COURSE,4.0,Intermediate,33k
 335,Medical Cannabis: The Health Effects of THC and CBD,University of Colorado Boulder,SPECIALIZATION,4.8,Beginner,4.8k
 214,Medical Neuroscience,Duke University,COURSE,4.9,Advanced,170k
 258,Memoir and Personal Essay: Write About Yourself,Wesleyan University,SPECIALIZATION,4.3,Beginner,13k

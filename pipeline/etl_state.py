@@ -30,6 +30,7 @@ class ETLState(TypedDict):
 
     # --- Engineer outputs ---
     transformation_code: str  # LLM-generated Python code
+    generated_code_path: str  # path to the saved .py file on disk
     transformed_data: Any     # result after code execution
     transformation_diff: dict # diff between raw_data and transformed_data
     engineer_verdict: str     # "pass" | "retry" | "escalate" | "terminate"

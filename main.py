@@ -10,7 +10,7 @@ load_dotenv()
 from pipeline.graph import build_graph
 
 
-def run_pipeline(source_type: str, source_config: dict, target_path: str = "", target_db: dict = None, max_retries: int = 3, user_instructions: str = "", connection_port: int | None = None,):
+def run_pipeline(source_type: str, source_config: dict, target_path: str = "", target_db: dict = None, max_retries: int = 3, user_instructions: str = "", connection_port: int = None):
     """Run the full ETL pipeline and return final state."""
     initial_state = {
         "source_type": source_type,
@@ -23,6 +23,7 @@ def run_pipeline(source_type: str, source_config: dict, target_path: str = "", t
         "raw_schema": {},
         "transformation_plan": "",
         "transformation_code": "",
+        "generated_code_path": "",
         "transformed_data": None,
         "transformation_diff": {},
         "engineer_verdict": "",
@@ -34,35 +35,8 @@ def run_pipeline(source_type: str, source_config: dict, target_path: str = "", t
 
     pipeline = build_graph()
     final_state = pipeline.invoke(initial_state)
-    print(final_state["transformation_plan"])
+    print("Architect agent " + final_state["transformation_plan"])
     # print(final_state["audit_log"])
-
-    diff = final_state.get("transformation_diff", {})
-    SAMPLE = 5
-    print("\n=== Transformation Diff ===")
-    print(f"  Rows before    : {diff.get('rows_before')}")
-    print(f"  Rows after     : {diff.get('rows_after')}")
-    print(f"  Rows removed   : {diff.get('rows_removed_count')}")
-    print(f"  Rows modified  : {len(diff.get('modified_rows', []))}")
-    if diff.get("columns_dropped"):
-        print(f"  Columns dropped: {diff['columns_dropped']}")
-    if diff.get("columns_added"):
-        print(f"  Columns added  : {diff['columns_added']}")
-
-    removed = diff.get("removed_rows", [])
-    if removed:
-        print(f"\n-- Removed rows (sample {min(SAMPLE, len(removed))} of {diff['rows_removed_count']}) --")
-        for row in removed[:SAMPLE]:
-            print(f"  {row}")
-
-    modified = diff.get("modified_rows", [])
-    if modified:
-        print(f"\n-- Modified rows (sample {min(SAMPLE, len(modified))} of {len(modified)}) --")
-        for entry in modified[:SAMPLE]:
-            print(f"  changed: {entry['changed_fields']}")
-            print(f"    before: {entry['before']}")
-            print(f"    after : {entry['after']}")
-
 
     return final_state
 

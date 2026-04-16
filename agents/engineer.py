@@ -8,30 +8,32 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
 
-SYSTEM_PROMPT = """You are the Engineer agent in a 4-agent ETL pipeline.
+SYSTEM_PROMPT = """/no_think
+You are the Engineer agent in a 4-agent ETL pipeline.
 Your job is to write Python code that transforms raw_data according to the Architect's plan.
 
 Rules:
-- raw_data is available as a Python variable: a list of dicts.
-- pandas is available as pd.
-- Your code MUST assign the final result to a variable called: result
-- result must be a list of dicts (use df.to_dict(orient='records') if you use pandas).
-- Write ONLY executable Python code. No markdown fences, no explanations.
-- Do not import anything other than pandas (already imported as pd) and json (already imported).
-- If you cannot complete the transformation safely, write: result = raw_data"""
+- `raw_data` is ALREADY defined in the execution context as a list of dicts. DO NOT redefine it, reassign it, or copy its values into your code as a literal. Just use it directly.
+- `pd` (pandas) and `json` are already imported. Do not import anything else.
+- Your code MUST assign the final result to a variable called `result`.
+- `result` must be a list of dicts (use df.to_dict(orient='records') if you use pandas).
+- Write ONLY executable Python code. No markdown fences, no explanations, no comments.
+- CRITICAL: If the plan contains a "Filter rows" step, implement it as a row-selection filter (e.g. df = df[df['col'].str.contains('value', case=False, na=False)]). The result must contain ONLY the matching rows.
+- Only fall back to `result = raw_data` if the plan truly has no transformations to apply."""
 
-USER_PROMPT_TEMPLATE = """Write Python code to transform raw_data using this plan:
-
-TRANSFORMATION PLAN:
+USER_PROMPT_TEMPLATE = """TRANSFORMATION PLAN (implement every step exactly):
 {plan}
 
-SCHEMA:
+Column schema:
 {schema}
 
-SAMPLE (first 3 records):
+Sample rows (5 rows for column reference only — raw_data already holds the full dataset at runtime, do NOT hardcode these values):
 {sample}
 
-Remember: assign final output to `result` as a list of dicts."""
+Write Python code that implements ONLY the steps in the TRANSFORMATION PLAN above.
+- Use `raw_data` as the input variable (already defined).
+- Assign the final output to `result` as a list of dicts.
+- No imports, no markdown, no comments. Start directly with code."""
 
 
 def _get_llm() -> ChatOllama:
@@ -99,7 +101,10 @@ def _compute_diff(raw_data: list, transformed_data: list) -> dict:
 
 
 def _extract_code(text: str) -> str:
-    """Strip markdown code fences if model adds them."""
+    """Strip markdown code fences and Qwen3 <think> blocks if present."""
+    import re
+    # Strip <think>...</think> blocks (Qwen3 thinking mode leakage)
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     lines = text.strip().splitlines()
     # Remove ```python / ``` wrappers
     if lines and lines[0].startswith("```"):
@@ -109,36 +114,70 @@ def _extract_code(text: str) -> str:
     return "\n".join(lines)
 
 
-def engineer_node(state: dict) -> dict:
-    """Generate transformation code and execute it. Returns verdict."""
+def engineer_generate_node(state: dict) -> dict:
+    """LLM step: generate transformation code and save it to a file."""
     raw_data = state.get("raw_data", [])
     raw_schema = state.get("raw_schema", {})
     transformation_plan = state.get("transformation_plan", "")
-    retry_count = state.get("retry_count", 0)
-    max_retries = state.get("max_retries", 3)
     audit_log = list(state.get("audit_log", []))
-
-    sample = raw_data[:3] if raw_data else []
 
     user_msg = USER_PROMPT_TEMPLATE.format(
         plan=transformation_plan,
         schema=json.dumps(raw_schema, indent=2),
-        sample=json.dumps(sample, indent=2),
+        sample=json.dumps(raw_data[:5], indent=2),
     )
 
     llm = _get_llm()
-    response = llm.invoke([
+    full_content = ""
+    for chunk in llm.stream([
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(content=user_msg),
-    ])
-    raw_code = response.content.strip()
-    transformation_code = _extract_code(raw_code)
+    ]):
+        full_content += chunk.content or ""
+    transformation_code = _extract_code(full_content.strip())
 
-    # Execute the generated code in a controlled namespace
+    # Save to a timestamped file so every run is inspectable / diffable
+    output_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "engineer_outputs")
+    )
+    os.makedirs(output_dir, exist_ok=True)
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    generated_code_path = os.path.join(output_dir, f"engineer_output_{ts}.py")
+    with open(generated_code_path, "w") as f:
+        f.write(transformation_code)
+
+    audit_log.append({
+        "timestamp": datetime.utcnow().isoformat(),
+        "agent": "Engineer",
+        "action": "generate",
+        "summary": f"Code generated and saved to {generated_code_path}",
+    })
+
+    return {
+        "transformation_code": transformation_code,
+        "generated_code_path": generated_code_path,
+        "audit_log": audit_log,
+    }
+
+
+def engineer_execute_node(state: dict) -> dict:
+    """Deterministic step: execute the generated code — no LLM involved."""
+    raw_data = state.get("raw_data", [])
+    transformation_code = state.get("transformation_code", "")
+    retry_count = state.get("retry_count", 0)
+    max_retries = state.get("max_retries", 3)
+    audit_log = list(state.get("audit_log", []))
+
     import pandas as pd  # noqa: F401 — available in exec namespace
 
+    # Provide raw_data under every plausible name the LLM might use
     namespace = {
         "raw_data": raw_data,
+        "data": raw_data,
+        "records": raw_data,
+        "rows": raw_data,
+        "courses": raw_data,
+        "dataset": raw_data,
         "pd": pd,
         "json": json,
         "result": None,
@@ -172,10 +211,7 @@ def engineer_node(state: dict) -> dict:
 
     except Exception as exc:
         error_msg = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
-        if retry_count < max_retries:
-            verdict = "retry"
-        else:
-            verdict = "escalate"
+        verdict = "retry" if retry_count < max_retries else "escalate"
 
         audit_log.append({
             "timestamp": datetime.utcnow().isoformat(),
@@ -185,7 +221,6 @@ def engineer_node(state: dict) -> dict:
         })
 
     return {
-        "transformation_code": transformation_code,
         "transformed_data": transformed_data,
         "transformation_diff": transformation_diff,
         "engineer_verdict": verdict,

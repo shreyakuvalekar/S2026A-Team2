@@ -7,35 +7,35 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
 
-SYSTEM_PROMPT = """You are the Architect agent in a 4-agent ETL pipeline.
-Your job is to analyze raw data and its schema, then produce a clear, step-by-step transformation plan.
+SYSTEM_PROMPT = """You are the Architect agent in a data pipeline.
+Your ONLY job is to translate the USER INSTRUCTIONS into a short numbered list of data transformation steps.
 
 Rules:
-- Be concise and specific. List numbered steps.
-- Each step should describe a single transformation action (e.g. rename column, cast type, filter nulls, normalize values).
-- Do NOT write code. Write a human-readable plan only.
-- End with a line: VERDICT: ready"""
+- Read the USER INSTRUCTIONS carefully. Your plan must implement exactly what the user asked for — nothing more, nothing less.
+- Do NOT invent steps that were not requested. Do NOT add sorting, filtering, or renaming unless the user asked for it.
+- Each step describes ONE action on the data: drop rows, keep rows, rename a column, cast a type, fill nulls, normalize values, etc.
+- Do NOT write code. Plain English only.
+- Do NOT mention file paths, directories, saving files, or any I/O.
+- Keep steps short. Example: "Drop rows where course_title contains non-ASCII characters."
+- End your response with exactly: VERDICT: ready"""
 
-USER_PROMPT_TEMPLATE = """Analyze the following raw data sample and schema
-
-INSTRUCTIONS FROM ENGINEER:
+USER_PROMPT_TEMPLATE = """/no_think
+USER INSTRUCTIONS (implement these exactly):
 {user_instructions}
 
-SCHEMA:
+Column names and types (for reference):
 {schema}
 
-SAMPLE (first 3 records):
+Sample rows (to understand the data shape — do NOT base your plan on patterns you see here, only on the USER INSTRUCTIONS above):
 {sample}
 
-TARGET PATH: {target_path}
-
-Produce a numbered transformation plan."""
+Write a numbered plan that implements only what the USER INSTRUCTIONS say."""
 
 
 def _get_llm() -> ChatOllama:
     base_url = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     return ChatOllama(
-        model="qwen2.5:14b-instruct-q4_K_M",
+        model="qwen3:14b",
         base_url=base_url,
         temperature=0.1,
     )
@@ -49,21 +49,22 @@ def architect_node(state: dict) -> dict:
     user_instructions = state.get("user_instructions", "No specific instructions provided.")
     audit_log = list(state.get("audit_log", []))
 
-    sample = raw_data[:3] if raw_data else []
-
     user_msg = USER_PROMPT_TEMPLATE.format(
         user_instructions=user_instructions,
         schema=json.dumps(raw_schema, indent=2),
-        sample=json.dumps(sample, indent=2),
-        target_path=target_path,
+        sample=json.dumps(raw_data[:10], indent=2),
     )
 
     llm = _get_llm()
-    response = llm.invoke([
+    full_content = ""
+    for chunk in llm.stream([
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(content=user_msg),
-    ])
-    transformation_plan = response.content.strip()
+    ]):
+        full_content += chunk.content or ""
+    # Strip <think>...</think> blocks in case Qwen3 thinking mode leaks through
+    import re
+    transformation_plan = re.sub(r"<think>.*?</think>", "", full_content, flags=re.DOTALL).strip()
 
     audit_log.append({
         "timestamp": datetime.utcnow().isoformat(),
